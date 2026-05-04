@@ -1,0 +1,4 @@
+interface:
+  display_name: "DOCX Template Translator"
+  short_description: "Adaptive LaTeX/PDF/Markdown to Word template conversion"
+  default_prompt: "Use $docx-template-translator to convert my LaTeX, PDF, or Markdown source into a complete Word document matching my uploaded .docx template."

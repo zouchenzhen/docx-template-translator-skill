@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Generated conversion outputs
+*.template-report.json
+*.preview.png
+*.tmp.docx
+*.tmp.pdf
+
+# Local/private documents
+samples/private/
