@@ -162,6 +162,15 @@ This is a workflow skill, not a one-click universal converter. The central idea
 is that every strict Word template has local rules, so the AI should inspect the
 template and generate a dedicated postprocessor.
 
+## Community
+
+[LINUX DO — 中文开发者社区](https://linux.do/)
+
+This project recognizes and appreciates LINUX DO as a Chinese developer
+community for open-source sharing and technical discussion. This acknowledgment
+is not a claim of official endorsement unless separately stated by the
+community.
+
 ## License
 
 MIT
