@@ -4,7 +4,22 @@
 
 它面向毕业论文、学位论文、单位报告、标准文档等场景，尤其适合那些 **pandoc 默认 DOCX 输出不够用**、必须严格套用学校或机构 Word 模板的任务。
 
-English: [README.md](README.md)
+English: [README.en.md](README.en.md)
+
+## 一分钟看效果
+
+仓库自带一个最小可跑示例 [`examples/minimal_markdown/`](examples/minimal_markdown/)，在仓库根目录跑：
+
+```bash
+python examples/minimal_markdown/run_example.py
+```
+
+脚本会现场生成一份 sample 模板，依次跑 inspect / adaptive / finalize，并在
+Windows + Word 环境下输出 PDF 预览拼图：
+
+![预览拼图](examples/minimal_markdown/expected/preview.png)
+
+inspect / adaptive / preview 三步在 macOS / Linux / Windows 都能跑；用 Word COM 更新字段并导出 PDF 的 finalize 步骤只在 Windows + Microsoft Word 下可用。
 
 ## 为什么不是直接用 pandoc？
 
