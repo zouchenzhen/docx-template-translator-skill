@@ -167,6 +167,10 @@ pandoc 默认能力通常止步于：把内容转换成 DOCX，并应用参考�
 
 本项目感谢并致谢 LINUX DO 作为中文开发者社区在开源分享与技术讨论方面提供的社区土壤与交流氛围。除非该社区另行明确声明，本致谢不代表 LINUX DO 对本项目的官方背书或认可。
 
-## License
+## 许可证
 
-MIT
+本项目以 [PolyForm Noncommercial License 1.0.0](LICENSE) 授权非商业使用。
+
+商业使用需要单独取得商业授权，详见 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
+
+这意味着源码公开，允许非商业学习、研究、个人项目和社区使用；但由于限制商业使用，它不是 OSI 认可意义上的开源许可证，更准确地说是“源码可见 / 非商业免费使用”。

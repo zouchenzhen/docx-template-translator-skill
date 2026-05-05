@@ -1,6 +1,6 @@
 # DOCX Template Translator Skill
 
-An open-source Codex skill for converting **LaTeX, PDF, Markdown, or rough DOCX**
+A source-available Codex skill for converting **LaTeX, PDF, Markdown, or rough DOCX**
 sources into complete Word documents that follow a user-supplied `.docx`
 template.
 
@@ -173,4 +173,12 @@ community.
 
 ## License
 
-MIT
+This project is licensed for noncommercial use under the
+[PolyForm Noncommercial License 1.0.0](LICENSE).
+
+Commercial use requires a separate commercial license. See
+[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+This means the source code is publicly available and free for noncommercial
+learning, research, personal projects, and community use, but it is not an
+OSI-approved open-source license because commercial use is restricted.
