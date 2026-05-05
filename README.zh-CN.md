@@ -223,5 +223,3 @@ skill 元数据（带 `name` + `description` frontmatter 的 `SKILL.md`）虽然
 本项目采用 [Apache License 2.0](LICENSE) 开源许可。
 
 Apache-2.0 允许使用、修改、分发、私有使用和商业使用，但需要遵守许可证条款。
-
-项目的商业化方向不是限制核心 skill 的使用，而是围绕服务、定制模板适配、托管流程、企业支持、模板包和自愿赞助来实现可持续发展。详见 [COMMERCIAL.md](COMMERCIAL.md)。

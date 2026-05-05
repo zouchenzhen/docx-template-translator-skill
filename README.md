@@ -250,8 +250,3 @@ This project is licensed under the [Apache License 2.0](LICENSE).
 
 Apache-2.0 allows use, modification, distribution, private use, and commercial
 use, subject to the license terms.
-
-Commercial sustainability is intended to come from services, custom template
-adaptation, hosted workflows, enterprise support, template packs, and voluntary
-sponsorship rather than restricting use of the core skill. See
-[COMMERCIAL.md](COMMERCIAL.md).
