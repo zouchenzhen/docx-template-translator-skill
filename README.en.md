@@ -253,18 +253,18 @@ spec, so the same folder can be reused by other agents with minor wrapping.
 The Python scripts themselves are pure CPython and do not depend on any agent
 runtime — any AI agent that can run shell commands can drive this workflow.
 
-## Community
-
-[LINUX DO — 中文开发者社区](https://linux.do/)
-
-This project recognizes and appreciates LINUX DO as a Chinese developer
-community for open-source sharing and technical discussion. This acknowledgment
-is not a claim of official endorsement unless separately stated by the
-community.
-
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
 
 Apache-2.0 allows use, modification, distribution, private use, and commercial
 use, subject to the license terms.
+
+## Community
+
+[LINUX DO — 中文开发者社区](https://linux.do/)
+
+This project acknowledges and thanks the LINUX DO community for its value to
+Chinese-language open-source exchange, project sharing, and technical
+discussion. Unless the community states otherwise, this section is only a
+community acknowledgment and link, and does not imply official endorsement.

@@ -227,14 +227,14 @@ skill 元数据（带 `name` + `description` frontmatter 的 `SKILL.md`）虽然
 
 脚本本身是纯 CPython，不依赖任何 agent runtime —— 任何能跑 shell 命令的 AI agent 都可以驱动这套工作流。
 
-## 社区
-
-[LINUX DO — 中文开发者社区](https://linux.do/)
-
-本项目感谢并致谢 LINUX DO 作为中文开发者社区在开源分享与技术讨论方面提供的社区土壤与交流氛围。除非该社区另行明确声明，本致谢不代表 LINUX DO 对本项目的官方背书或认可。
-
 ## 许可证
 
 本项目采用 [Apache License 2.0](LICENSE) 开源许可。
 
 Apache-2.0 允许使用、修改、分发、私有使用和商业使用，但需要遵守许可证条款。
+
+## 社区
+
+[LINUX DO — 中文开发者社区](https://linux.do/)
+
+本项目认可并感谢 LINUX DO 社区在中文开发者开源交流、项目分享和技术讨论中的价值。除非社区另有明确说明，此处仅为社区致谢和链接，不代表官方背书。
