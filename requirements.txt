@@ -2,4 +2,7 @@ python-docx>=1.1.0
 pywin32>=306; platform_system == "Windows"
 pymupdf>=1.23.0
 pillow>=10.0.0
-pdf2docx>=0.5.8
+
+# Optional: only needed when you want to convert native PDFs into a rough
+# body DOCX inside the workflow. Install separately when needed:
+#   pip install "pdf2docx>=0.5.8"

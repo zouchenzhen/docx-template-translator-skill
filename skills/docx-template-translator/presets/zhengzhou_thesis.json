@@ -1,0 +1,23 @@
+{
+  "_comment": "Preset matching the Zhengzhou University thesis template. Pass via --config to reproduce the case-study behaviour (Times New Roman + 宋体 body, three-line tables, black hyperlinks).",
+  "body_style": "论文正文",
+  "body_candidate_styles": ["Normal", "Body Text", "正文"],
+  "unnumbered_h1": [
+    "摘要",
+    "Abstract",
+    "目录",
+    "参考文献",
+    "致谢",
+    "攻读硕士学位期间发表的论文及科研成果"
+  ],
+  "unnumbered_heading_styles": ["Heading 1", "标题 1"],
+  "caption_regex": "^(图|表)\\s*\\d+\\.\\d+\\s+",
+  "body_font_name": "Times New Roman",
+  "body_east_asia_font": "宋体",
+  "body_font_size_pt": 12,
+  "table_font_name": "Times New Roman",
+  "table_east_asia_font": "宋体",
+  "table_font_size_pt": 10.5,
+  "enable_three_line_tables": true,
+  "enable_black_hyperlinks": true
+}

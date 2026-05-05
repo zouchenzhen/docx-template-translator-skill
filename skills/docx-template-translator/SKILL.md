@@ -1,6 +1,6 @@
 ---
 name: docx-template-translator
-description: Adaptive conversion of LaTeX, PDF, or Markdown sources into a complete Word .docx that follows a user-supplied .docx template. Use when the user needs thesis, dissertation, report, standards document, or institutional Word formatting where pandoc --reference-doc alone is insufficient, especially for cover pages, declarations, TOC, heading numbering, captions, three-line tables, equations, citations, and visual verification.
+description: Adaptive conversion of LaTeX, PDF, or Markdown sources into a complete Word .docx that follows a user-supplied .docx template. Use when pandoc --reference-doc alone is not enough — for thesis, dissertation, report, or institutional Word formatting that needs cover pages, declarations, TOC, heading numbering, captions, three-line tables, equations, citations, and visual verification.
 ---
 
 # DOCX Template Translator
@@ -41,13 +41,16 @@ Treat the input file as the content source and the Word template as the formatti
 - For hyperlinks, explicitly set black/no-underline styling if the target template requires print-style links.
 - For references, add bookmarks at bibliography entries before converting in-text numeric citations into internal hyperlinks.
 - For institutional templates, avoid generic style names like `Body Text`; inspect the template because those names may be repurposed.
+- For finalization, always run with macros disabled. The bundled `finalize_word_docx.py` sets `Word.Application.AutomationSecurity = msoAutomationSecurityForceDisable` before opening the document; do not loosen this for inputs of unknown provenance.
+- Three-line table coercion is opt-in (`--three-line-tables` or `enable_three_line_tables` in config). Don't enable it unless the target template actually requires that layout.
 
 ## Script Guide
 
-- `scripts/inspect_docx_template.py`: dumps template styles, paragraphs, tables, section settings, numbering hints, and hyperlink colors.
-- `scripts/adaptive_docx_pipeline.py`: reusable starter pipeline for template-based reconstruction.
-- `scripts/finalize_word_docx.py`: updates Word fields/TOC and optionally exports PDF through Word COM.
+- `scripts/inspect_docx_template.py`: dumps template styles (including those defined but unused in the body), paragraphs, tables, section settings, numbering hints, and hyperlink colors.
+- `scripts/adaptive_docx_pipeline.py`: reusable starter pipeline for template-based reconstruction. Behavior is config-driven (`--config`). Three-line tables and other Chinese-thesis-specific tweaks are opt-in.
+- `scripts/finalize_word_docx.py`: updates Word fields/TOC and optionally exports PDF through Word COM. Disables macros for safety.
 - `scripts/render_pdf_preview.py`: renders selected PDF pages into contact sheets for visual QA.
+- `presets/zhengzhou_thesis.json`: example config that reproduces the Zhengzhou-University thesis behaviour described in the case study.
 
 ## References
 

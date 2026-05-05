@@ -100,11 +100,20 @@ It includes:
 
 ## Installation
 
-Copy the skill folder into your Codex skills directory:
+Copy the skill folder into your Codex skills directory.
+
+On macOS / Linux:
 
 ```bash
 mkdir -p ~/.codex/skills
 cp -r skills/docx-template-translator ~/.codex/skills/
+```
+
+On Windows (PowerShell):
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$HOME\.codex\skills" | Out-Null
+Copy-Item -Recurse -Force skills\docx-template-translator "$HOME\.codex\skills\"
 ```
 
 Then ask Codex:
@@ -112,6 +121,9 @@ Then ask Codex:
 ```text
 Use $docx-template-translator to convert my LaTeX thesis into Word using this .docx template.
 ```
+
+See [Compatibility](#compatibility) below for using the same skill folder from
+Claude Code, Cursor, or other agents.
 
 ## Python Dependencies
 
@@ -148,7 +160,21 @@ pandoc main.tex --citeproc --reference-doc template.docx -o body.docx
 ```
 
 4. Let Codex adapt `scripts/adaptive_docx_pipeline.py` for the concrete
-template.
+template. The starter pipeline accepts a JSON config; for a Chinese-thesis
+template you can start from the bundled preset:
+
+```bash
+python skills/docx-template-translator/scripts/adaptive_docx_pipeline.py \
+    --template template.docx \
+    --body-docx body.docx \
+    --out final.docx \
+    --config skills/docx-template-translator/presets/zhengzhou_thesis.json \
+    --three-line-tables
+```
+
+For other templates, drop `--three-line-tables` and supply your own config (or
+rely on the neutral defaults that don't change body fonts).
+
 5. Finalize:
 
 ```bash
@@ -161,6 +187,53 @@ python scripts/render_pdf_preview.py final.pdf --pages 1-8
 This is a workflow skill, not a one-click universal converter. The central idea
 is that every strict Word template has local rules, so the AI should inspect the
 template and generate a dedicated postprocessor.
+
+## Known Limitations
+
+- **Finalization is Windows-only.** `finalize_word_docx.py` drives Microsoft
+  Word through COM (pywin32), so updating fields/TOC and exporting PDF only
+  work on Windows with a real Word install. Inspection, the adaptive pipeline,
+  and PDF preview rendering work on macOS and Linux without Word.
+- **Scanned / image-only PDFs are not supported.** PDF input requires a
+  born-digital text layer (so pdf2docx / Word import can extract structure).
+  OCR your PDF first or use the LaTeX / Markdown source instead.
+- **Templates with macros: macros are disabled.** The finalize step sets
+  `Word.AutomationSecurity = msoAutomationSecurityForceDisable` before opening
+  the document, so AutoMacros / VBA in the template will not run. See
+  [SECURITY.md](SECURITY.md).
+- **The starter pipeline ships with conservative defaults.** Three-line
+  tables, body-font overrides, and other Chinese-thesis-specific tweaks are
+  opt-in via the config file (see `presets/zhengzhou_thesis.json`) or CLI
+  flags. The default behaviour does not silently rewrite your body fonts.
+- **Style-name detection covers English and 中文 templates.** Other localized
+  Word templates (Japanese / Korean / etc.) may need additional entries in
+  `unnumbered_heading_styles` and `body_candidate_styles`.
+
+## Security Notes
+
+- The finalize step opens user-supplied `.docx` files with Microsoft Word.
+  Macros are disabled by default; do not loosen this for inputs of unknown
+  provenance.
+- The skill workflow lets the AI agent generate or patch a project-specific
+  Python pipeline. Review the diff before running it. The reference scripts
+  shipped here perform no network I/O and only write to explicit output paths.
+- See [SECURITY.md](SECURITY.md) for the full threat model.
+
+## Compatibility
+
+The skill metadata (`SKILL.md` with `name` + `description` frontmatter) is
+designed for Codex but the format overlaps with the Anthropic Claude Skills
+spec, so the same folder can be reused by other agents with minor wrapping.
+
+| Agent / IDE     | Status               | Notes |
+| --------------- | -------------------- | ----- |
+| **Codex**       | Native target        | Drop the folder under `~/.codex/skills/` and call with `Use $docx-template-translator …`. |
+| **Claude Code** | Works with rewrap    | The `SKILL.md` frontmatter matches Claude Skills format. Place the folder under a Claude Skills directory (e.g. `~/.claude/skills/<name>/`) or wrap as a Claude Code plugin. The Python scripts run unchanged. |
+| **Cursor**      | Manual / rules-based | Cursor has no native "skill" concept; copy the relevant SKILL.md guidance into a `.cursor/rules/*.mdc` rule and let the agent invoke `scripts/*.py` directly. |
+| **OpenClaw**    | Adaptable            | The structure is close to OpenClaw's skill convention but no OpenClaw-specific manifest is shipped. Adjust metadata before publishing to that registry. |
+
+The Python scripts themselves are pure CPython and do not depend on any agent
+runtime — any AI agent that can run shell commands can drive this workflow.
 
 ## Community
 

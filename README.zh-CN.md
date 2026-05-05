@@ -84,11 +84,20 @@ skills/docx-template-translator/
 
 ## 安装
 
-将 skill 复制到 Codex skills 目录：
+将 skill 复制到 Codex skills 目录。
+
+macOS / Linux：
 
 ```bash
 mkdir -p ~/.codex/skills
 cp -r skills/docx-template-translator ~/.codex/skills/
+```
+
+Windows（PowerShell）：
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$HOME\.codex\skills" | Out-Null
+Copy-Item -Recurse -Force skills\docx-template-translator "$HOME\.codex\skills\"
 ```
 
 然后可以这样调用：
@@ -96,6 +105,8 @@ cp -r skills/docx-template-translator ~/.codex/skills/
 ```text
 Use $docx-template-translator to convert my LaTeX thesis into Word using this .docx template.
 ```
+
+如果需要在 Claude Code、Cursor 或其他 AI agent 里使用同一份 skill 文件夹，参考下文 [兼容性](#兼容性) 一节。
 
 ## Python 依赖
 
@@ -132,6 +143,19 @@ pandoc main.tex --citeproc --reference-doc template.docx -o body.docx
 ```
 
 4. Codex 根据模板和 body 输出，改造 `scripts/adaptive_docx_pipeline.py`。
+   起步脚本支持 JSON 配置；如果是中文学位论文模板，可以直接复用内置 preset：
+
+```bash
+python skills/docx-template-translator/scripts/adaptive_docx_pipeline.py \
+    --template template.docx \
+    --body-docx body.docx \
+    --out final.docx \
+    --config skills/docx-template-translator/presets/zhengzhou_thesis.json \
+    --three-line-tables
+```
+
+非中文学位论文模板请去掉 `--three-line-tables`，并使用自己的 config（或保留默认行为，默认不会改写正文字体）。
+
 5. 最终处理：
 
 ```bash
@@ -160,6 +184,33 @@ pandoc 默认能力通常止步于：把内容转换成 DOCX，并应用参考�
 ## 项目状态
 
 这是一个工作流 skill，不是万能一键转换器。它的核心价值是：每个严格 Word 模板都有自己的局部规则，因此让 AI 先检查模板，再写一版专用 Python 脚本，往往比写一个“通用转换器”更可靠。
+
+## 已知限制
+
+- **finalize 阶段仅支持 Windows。** `finalize_word_docx.py` 通过 pywin32 调用 Microsoft Word COM 来更新字段/目录并导出 PDF，因此只在装有真实 Word 的 Windows 机器上能跑完整流程。模板检查、adaptive pipeline 和 PDF 预览拼图在 macOS / Linux 上不依赖 Word，可以直接运行。
+- **不支持扫描版 / 纯图片 PDF。** PDF 输入需要原生数字文本层（pdf2docx / Word 导入才能抽出结构），先 OCR 再转，或直接用 LaTeX / Markdown 源文件。
+- **模板含宏：宏会被禁用。** finalize 阶段会先设置 `Word.AutomationSecurity = msoAutomationSecurityForceDisable`，再打开文档，因此模板里的 AutoMacros / VBA 不会执行。详见 [SECURITY.md](SECURITY.md)。
+- **starter pipeline 默认行为是保守的。** 三线表、正文字体覆盖等中文学位论文专属处理改成了 opt-in，需要通过 config（参考 `presets/zhengzhou_thesis.json`）或 CLI flag 显式打开。默认行为不会偷偷改写你的正文字体。
+- **样式名识别覆盖英文和中文模板。** 其他本地化 Word 模板（日文 / 韩文等）可能需要在 config 里补充 `unnumbered_heading_styles` 和 `body_candidate_styles`。
+
+## 安全说明
+
+- finalize 阶段会用本机 Microsoft Word 打开用户提供的 `.docx`。脚本默认禁用宏，请勿在不可信来源的输入上放宽该设置。
+- skill 工作流允许 AI agent 基于 `adaptive_docx_pipeline.py` 生成 / 改写一份项目专用 Python 脚本。**运行 AI 改写后的脚本前请人工 review diff**。本项目自带的脚本不进行任何网络 I/O，也只往用户显式指定的输出路径写文件。
+- 完整威胁模型详见 [SECURITY.md](SECURITY.md)。
+
+## 兼容性
+
+skill 元数据（带 `name` + `description` frontmatter 的 `SKILL.md`）虽然为 Codex 设计，但格式与 Anthropic Claude Skills 规范有重叠，因此同一份 skill 文件夹可以稍作包装后被其他 AI agent 复用。
+
+| Agent / IDE     | 状态        | 说明 |
+| --------------- | ----------- | ---- |
+| **Codex**       | 原生支持     | 直接放到 `~/.codex/skills/`，用 `Use $docx-template-translator …` 触发。 |
+| **Claude Code** | 包装后可用   | `SKILL.md` 的 frontmatter 与 Claude Skills 规范一致，放到 Claude Skills 目录（例如 `~/.claude/skills/<name>/`）或包装成 Claude Code plugin 即可。Python 脚本无需改动。 |
+| **Cursor**      | 手动 / Rules | Cursor 没有原生 "skill" 概念，可以把 SKILL.md 内容粘到 `.cursor/rules/*.mdc` 里，让 agent 直接调用 `scripts/*.py`。 |
+| **OpenClaw**    | 可适配       | 结构与 OpenClaw skill 约定接近，但仓库里没有 OpenClaw 专属 manifest，发布到该平台前请补元数据。 |
+
+脚本本身是纯 CPython，不依赖任何 agent runtime —— 任何能跑 shell 命令的 AI agent 都可以驱动这套工作流。
 
 ## 社区
 

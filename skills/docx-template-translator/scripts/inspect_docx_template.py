@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import zipfile
 from pathlib import Path
 
 from docx import Document
-from docx.oxml.ns import qn
+from docx.enum.style import WD_STYLE_TYPE
 
 
 def pt(value):
@@ -20,24 +21,42 @@ def pt(value):
 
 
 def style_summary(style):
-    font = style.font
-    pf = style.paragraph_format
-    xml = style._element.xml
-    return {
+    """Summarize a paragraph or character style.
+
+    Table / numbering styles do not expose .font / .paragraph_format and would
+    raise AttributeError if probed the same way as paragraph styles, so we
+    guard each access defensively.
+    """
+    info = {
         "name": style.name,
         "style_id": style.style_id,
         "type": str(style.type),
-        "font_name": font.name,
-        "font_size_pt": pt(font.size),
-        "bold": font.bold,
-        "line_spacing": str(pf.line_spacing),
-        "space_before_pt": pt(pf.space_before),
-        "space_after_pt": pt(pf.space_after),
-        "first_line_indent_pt": pt(pf.first_line_indent),
-        "left_indent_pt": pt(pf.left_indent),
-        "has_numbering": "numPr" in xml,
-        "outline_level": "outlineLvl" in xml,
     }
+    font = getattr(style, "font", None)
+    if font is not None:
+        try:
+            info["font_name"] = font.name
+            info["font_size_pt"] = pt(font.size)
+            info["bold"] = font.bold
+        except Exception:
+            pass
+    pf = getattr(style, "paragraph_format", None)
+    if pf is not None:
+        try:
+            info["line_spacing"] = str(pf.line_spacing)
+            info["space_before_pt"] = pt(pf.space_before)
+            info["space_after_pt"] = pt(pf.space_after)
+            info["first_line_indent_pt"] = pt(pf.first_line_indent)
+            info["left_indent_pt"] = pt(pf.left_indent)
+        except Exception:
+            pass
+    try:
+        xml = style._element.xml
+        info["has_numbering"] = "numPr" in xml
+        info["outline_level"] = "outlineLvl" in xml
+    except Exception:
+        pass
+    return info
 
 
 def paragraph_summary(paragraph, idx):
@@ -83,6 +102,11 @@ def table_summary(table, idx):
     }
 
 
+def is_heading_style(name: str) -> bool:
+    """Match both English ('Heading 1') and Chinese ('标题 1') heading styles."""
+    return name.startswith("Heading") or "标题" in name
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("template")
@@ -92,23 +116,40 @@ def main() -> int:
     path = Path(args.template)
     doc = Document(path)
 
+    used_style_names = {p.style.name for p in doc.paragraphs}
+
+    # 关键修复：模板中预定义但 body 内无段落使用的样式 —— 例如 "论文正文"、
+    # "参考文献条目" —— 才是 AI 真正需要识别并映射的目标。原实现只导出
+    # name in used 的样式，会把这些关键样式整体丢掉。
+    relevant_types = {WD_STYLE_TYPE.PARAGRAPH, WD_STYLE_TYPE.CHARACTER}
+    styles_export = []
+    for style in doc.styles:
+        try:
+            stype = style.type
+        except Exception:
+            continue
+        if stype not in relevant_types:
+            continue
+        try:
+            summary = style_summary(style)
+        except Exception:
+            continue
+        summary["used_in_body"] = style.name in used_style_names
+        styles_export.append(summary)
+
     report = {
         "file": str(path),
         "paragraph_count": len(doc.paragraphs),
         "table_count": len(doc.tables),
-        "styles_used": sorted({p.style.name for p in doc.paragraphs}),
-        "styles": [
-            style_summary(style)
-            for style in doc.styles
-            if style.name in {p.style.name for p in doc.paragraphs}
-        ],
+        "styles_used_in_body": sorted(used_style_names),
+        "styles": styles_export,
         "paragraphs_first_120": [
             paragraph_summary(p, i) for i, p in enumerate(doc.paragraphs[:120])
         ],
         "heading_paragraphs": [
             paragraph_summary(p, i)
             for i, p in enumerate(doc.paragraphs)
-            if p.style.name.startswith("Heading")
+            if is_heading_style(p.style.name)
         ],
         "tables": [table_summary(t, i) for i, t in enumerate(doc.tables)],
     }
@@ -128,7 +169,17 @@ def main() -> int:
             }
         if "word/numbering.xml" in names:
             numbering = zf.read("word/numbering.xml").decode("utf-8", errors="ignore")
-            report["numbering_xml_length"] = len(numbering)
+            num_ids = sorted(
+                {int(m.group(1)) for m in re.finditer(r'w:numId w:val="(\d+)"', numbering)}
+            )
+            abstract_ids = sorted(
+                {int(m.group(1)) for m in re.finditer(r'w:abstractNumId w:val="(\d+)"', numbering)}
+            )
+            report["numbering"] = {
+                "xml_length": len(numbering),
+                "num_ids": num_ids,
+                "abstract_num_ids": abstract_ids,
+            }
 
     out = Path(args.out) if args.out else path.with_suffix(".template-report.json")
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

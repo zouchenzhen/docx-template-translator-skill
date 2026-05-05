@@ -39,16 +39,19 @@ def main() -> int:
     pdf = Path(args.pdf)
     out = Path(args.out) if args.out else pdf.with_suffix(".preview.png")
     doc = fitz.open(pdf)
-    page_indices = parse_pages(args.pages, len(doc))
+    try:
+        page_indices = parse_pages(args.pages, len(doc))
 
-    thumbs = []
-    for idx in page_indices:
-        pix = doc[idx].get_pixmap(matrix=fitz.Matrix(args.scale, args.scale), alpha=False)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        canvas = Image.new("RGB", (img.width, img.height + 26), "white")
-        canvas.paste(img, (0, 26))
-        ImageDraw.Draw(canvas).text((6, 6), f"p{idx + 1}", fill="black")
-        thumbs.append(canvas)
+        thumbs = []
+        for idx in page_indices:
+            pix = doc[idx].get_pixmap(matrix=fitz.Matrix(args.scale, args.scale), alpha=False)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            canvas = Image.new("RGB", (img.width, img.height + 26), "white")
+            canvas.paste(img, (0, 26))
+            ImageDraw.Draw(canvas).text((6, 6), f"p{idx + 1}", fill="black")
+            thumbs.append(canvas)
+    finally:
+        doc.close()
 
     if not thumbs:
         raise SystemExit("no pages selected")
