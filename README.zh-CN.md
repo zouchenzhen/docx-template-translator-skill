@@ -169,8 +169,8 @@ pandoc 默认能力通常止步于：把内容转换成 DOCX，并应用参考�
 
 ## 许可证
 
-本项目以 [PolyForm Noncommercial License 1.0.0](LICENSE) 授权非商业使用。
+本项目采用 [Apache License 2.0](LICENSE) 开源许可。
 
-商业使用需要单独取得商业授权，详见 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
+Apache-2.0 允许使用、修改、分发、私有使用和商业使用，但需要遵守许可证条款。
 
-这意味着源码公开，允许非商业学习、研究、个人项目和社区使用；但由于限制商业使用，它不是 OSI 认可意义上的开源许可证，更准确地说是“源码可见 / 非商业免费使用”。
+项目的商业化方向不是限制核心 skill 的使用，而是围绕服务、定制模板适配、托管流程、企业支持、模板包和自愿赞助来实现可持续发展。详见 [COMMERCIAL.md](COMMERCIAL.md)。
