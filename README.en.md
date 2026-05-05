@@ -24,6 +24,15 @@ pipeline, and (on Windows + Word) renders a PDF preview contact sheet:
 
 ![preview contact sheet](examples/minimal_markdown/expected/preview.png)
 
+> The committed screenshot above is generated against a **real Chinese-thesis
+> template** (the Zhengzhou University undergraduate thesis template) via
+> `python examples/minimal_markdown/run_example.py --template <your-local-template.docx>`.
+> Without `--template`, `run_example.py` falls back to the lightweight
+> sample produced by `build_template.py`, which is intentionally minimal but
+> fully reproducible. The names and ID on the cover ("李四 / 王五 / 10459")
+> are placeholder values shipped inside the school template itself, not real
+> student data.
+
 Inspect / adaptive / preview steps run on macOS, Linux, and Windows. The
 Word-COM finalize step is Windows + Microsoft Word only.
 

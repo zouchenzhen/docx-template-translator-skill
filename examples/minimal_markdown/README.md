@@ -60,6 +60,24 @@ python examples/minimal_markdown/run_example.py
 
 所有产物落在 `examples/minimal_markdown/`，方便和 `expected/` 对比。
 
+### 用真实学位论文模板跑
+
+不传参数时 `run_example.py` 会用 `build_template.py` 现场生成的轻量
+sample 模板（小、可重现，不依赖任何学校资产）。如果你想看这套流水线在
+**真实学位论文模板**上的输出（也就是仓库里 `expected/preview.png` 那张
+图的来源），传一个本地的 `.docx` 模板路径即可：
+
+```bash
+python examples/minimal_markdown/run_example.py \
+    --template /path/to/your-real-thesis-template.docx
+```
+
+脚本会把这份模板复制到 `sample_template.docx`，然后照常跑 inspect →
+pandoc → adaptive → finalize → preview。模板本身不会被 commit（已在
+`.gitignore` 里），只产出会写到 `examples/minimal_markdown/`。`expected/preview.png`
+就是用这种方式针对一份郑州大学学位论文模板跑出来的；详见
+[`expected/README.md`](expected/README.md)。
+
 ## 期望产物
 
 跑完之后你应该看到：

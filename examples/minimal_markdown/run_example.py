@@ -1,7 +1,7 @@
 """Run the minimal_markdown example end-to-end.
 
 Steps:
-  1. build_template.py            -> sample_template.docx
+  1. build_template.py            -> sample_template.docx   (skipped if --template is given)
   2. inspect_docx_template.py     -> sample_template.template-report.json
   3. pandoc (if available) OR a python-docx fallback   -> body.docx
   4. adaptive_docx_pipeline.py    -> final.docx
@@ -9,9 +9,16 @@ Steps:
 
 The script is meant to be runnable from anywhere — it resolves all paths
 relative to itself, not to the current working directory.
+
+Optional: pass --template <path-to-real.docx> to run the example against your
+own real Word template (e.g. a school thesis template). The given file is
+copied into examples/minimal_markdown/sample_template.docx so the rest of the
+pipeline keeps working unchanged. Without --template the example regenerates
+the lightweight reproducible sample template via build_template.py.
 """
 from __future__ import annotations
 
+import argparse
 import shutil
 import subprocess
 import sys
@@ -139,7 +146,30 @@ def step_finalize_if_possible() -> None:
 
 
 def main() -> int:
-    step_build_template()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--template",
+        default=None,
+        help=(
+            "Optional path to a real .docx template (e.g. a school thesis "
+            "template). The file is copied into sample_template.docx so the "
+            "rest of the pipeline runs unchanged. Without this flag, "
+            "build_template.py regenerates the bundled minimal sample."
+        ),
+    )
+    args = parser.parse_args()
+
+    if args.template:
+        custom = Path(args.template).expanduser().resolve()
+        if not custom.is_file():
+            print(f"--template path not found: {custom}")
+            return 2
+        TEMPLATE.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(custom, TEMPLATE)
+        print(f"using custom template: {custom}")
+        print(f"  copied to: {TEMPLATE}")
+    else:
+        step_build_template()
     step_inspect()
     if not step_rough_body_with_pandoc():
         print("(pandoc unavailable — falling back to python-docx body builder)")
