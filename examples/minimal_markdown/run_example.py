@@ -62,6 +62,8 @@ def step_rough_body_with_pandoc() -> bool:
         run([
             "pandoc",
             str(SAMPLE_MD),
+            "--resource-path",
+            str(HERE),
             "--reference-doc",
             str(TEMPLATE),
             "-o",

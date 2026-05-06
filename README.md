@@ -15,20 +15,20 @@ python examples/minimal_markdown/run_example.py
 ```
 
 脚本会现场生成一份 sample 模板，依次跑 inspect / adaptive / finalize，并在
-Windows + Word 环境下输出 PDF 预览拼图：
+Windows + Word 环境下输出 PDF 预览图：
 
-![预览拼图](examples/minimal_markdown/expected/preview.png)
+![正文效果预览](examples/minimal_markdown/expected/preview.png)
 
-> 上图是用一份**真实的郑州大学学位论文模板**跑出来的 2×2 正文页拼图：
-> **目录 / 图表格式示范页 / 数学公式示范页 / 参考文献页**。这几页比封面
-> 更能展示这个 skill 对**正文内容**的处理效果——三级目录带页码点线、图与
-> 三线表的题注居中加粗、行间数学公式编号、参考文献条目缩进，都能直接看
-> 到。它通过下面这条命令生成：
+> 上图是用一份**真实的郑州大学学位论文模板**跑出来的正文细节裁剪图，
+> 来源是示例 `sample.md` 经过 pandoc → adaptive → Word finalize 后的 PDF
+> 第 20 页正文区域。它同时展示了真实插图、图题、正文段落、显示公式和三线表，
+> 比封面或模板自带范例页更能说明这个 skill 对 Markdown 正文内容的处理效果。
+> 生成时使用下面这条命令，然后从第 20 页裁剪出主体区域：
 >
 > ```bash
 > python examples/minimal_markdown/run_example.py \
 >     --template <你的本地模板.docx> \
->     --preview-pages "7,12,13,14"
+>     --preview-pages "20"
 > ```
 >
 > 不传 `--template` 时 `run_example.py` 会用 `build_template.py` 现场生成的
