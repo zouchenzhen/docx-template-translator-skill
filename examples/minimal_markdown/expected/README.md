@@ -38,7 +38,7 @@ python examples/minimal_markdown/run_example.py \
 
 The committed PNG is then cropped from page 20 to remove the unrelated
 running header and page margins, keeping the body region readable in the
-GitHub README. The image is ~270 KB.
+GitHub README. The image is ~280 KB.
 
 Without `--template`, `run_example.py` falls back to the lightweight
 `build_template.py`-generated sample, which is intentionally minimal and
