@@ -118,7 +118,7 @@ def step_adaptive_pipeline() -> None:
     ])
 
 
-def step_finalize_if_possible() -> None:
+def step_finalize_if_possible(pages: str) -> None:
     if sys.platform != "win32":
         print("(skip finalize: not on Windows)")
         return
@@ -139,7 +139,7 @@ def step_finalize_if_possible() -> None:
             str(SCRIPTS / "render_pdf_preview.py"),
             str(FINAL.with_suffix(".pdf")),
             "--pages",
-            "1-4",
+            pages,
         ])
     except subprocess.CalledProcessError as exc:
         print(f"(finalize step failed: {exc})")
@@ -155,6 +155,17 @@ def main() -> int:
             "template). The file is copied into sample_template.docx so the "
             "rest of the pipeline runs unchanged. Without this flag, "
             "build_template.py regenerates the bundled minimal sample."
+        ),
+    )
+    parser.add_argument(
+        "--preview-pages",
+        default="1-4",
+        help=(
+            "Page range passed to render_pdf_preview.py (default '1-4'). "
+            "When running against a real thesis template that bundles its own "
+            "front-matter + sample chapters, prefer pages that show real "
+            "body content (TOC + figure/equation/table sample + references), "
+            "e.g. '7,12,13,14'."
         ),
     )
     args = parser.parse_args()
@@ -175,7 +186,7 @@ def main() -> int:
         print("(pandoc unavailable — falling back to python-docx body builder)")
         step_rough_body_fallback()
     step_adaptive_pipeline()
-    step_finalize_if_possible()
+    step_finalize_if_possible(args.preview_pages)
     print()
     print("done. outputs in", HERE)
     return 0

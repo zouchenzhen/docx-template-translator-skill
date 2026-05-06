@@ -19,12 +19,21 @@ Windows + Word 环境下输出 PDF 预览拼图：
 
 ![预览拼图](examples/minimal_markdown/expected/preview.png)
 
-> 上图是用一份**真实的郑州大学学位论文模板**跑出来的 4 页拼图（封面 / 英文
-> 封面 / 英文扉页 / 原创性声明）。它通过 `--template` 参数指定模板生成：
-> `python examples/minimal_markdown/run_example.py --template <你的本地模板.docx>`。
+> 上图是用一份**真实的郑州大学学位论文模板**跑出来的 2×2 正文页拼图：
+> **目录 / 图表格式示范页 / 数学公式示范页 / 参考文献页**。这几页比封面
+> 更能展示这个 skill 对**正文内容**的处理效果——三级目录带页码点线、图与
+> 三线表的题注居中加粗、行间数学公式编号、参考文献条目缩进，都能直接看
+> 到。它通过下面这条命令生成：
+>
+> ```bash
+> python examples/minimal_markdown/run_example.py \
+>     --template <你的本地模板.docx> \
+>     --preview-pages "7,12,13,14"
+> ```
+>
 > 不传 `--template` 时 `run_example.py` 会用 `build_template.py` 现场生成的
-> 轻量 sample 模板，输出更简化但完全可重现。封面里的 "李四 / 王五 / 10459"
-> 是学校模板自带的占位示例值，不是任何真实学生信息。
+> 轻量 sample 模板，输出更简化但完全可重现；`--preview-pages` 默认 `"1-4"`，
+> 在 demo 模板上就够了。详见 [`examples/minimal_markdown/expected/README.md`](examples/minimal_markdown/expected/README.md)。
 
 inspect / adaptive / preview 三步在 macOS / Linux / Windows 都能跑；用 Word COM 更新字段并导出 PDF 的 finalize 步骤只在 Windows + Microsoft Word 下可用。
 

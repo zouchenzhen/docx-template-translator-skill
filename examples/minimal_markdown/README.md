@@ -69,13 +69,20 @@ sample 模板（小、可重现，不依赖任何学校资产）。如果你想�
 
 ```bash
 python examples/minimal_markdown/run_example.py \
-    --template /path/to/your-real-thesis-template.docx
+    --template /path/to/your-real-thesis-template.docx \
+    --preview-pages "7,12,13,14"
 ```
 
 脚本会把这份模板复制到 `sample_template.docx`，然后照常跑 inspect →
-pandoc → adaptive → finalize → preview。模板本身不会被 commit（已在
-`.gitignore` 里），只产出会写到 `examples/minimal_markdown/`。`expected/preview.png`
-就是用这种方式针对一份郑州大学学位论文模板跑出来的；详见
+pandoc → adaptive → finalize → preview。`--preview-pages` 控制最后那张
+PDF 拼图渲染哪些页：默认 `"1-4"` 在简化 demo 模板上就能看到核心结构，
+但跑真实学位论文模板时前几页全是封面/声明/英文扉页，看不出 skill 对正文
+内容做了什么；改用 `"7,12,13,14"` 之类的页码，可以直接渲染**目录 + 图与
+表格示范页 + 公式示范页 + 参考文献页**，更能体现 skill 真正的产出价值。
+
+模板本身不会被 commit（已在 `.gitignore` 里），只产出会写到
+`examples/minimal_markdown/`。`expected/preview.png` 就是用这种方式针对
+一份郑州大学学位论文模板跑出来的；具体每页是什么、为什么挑这几页，详见
 [`expected/README.md`](expected/README.md)。
 
 ## 期望产物
