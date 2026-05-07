@@ -4,6 +4,7 @@
 Usage:
   python validate_docx_conversion.py final.docx --pdf final.pdf --out validation.json
   python validate_docx_conversion.py final.docx --ordered-term 绪论 --ordered-term 参考文献
+  python validate_docx_conversion.py final.docx --template template.docx --protected-until 中 文 摘 要
 """
 from __future__ import annotations
 
@@ -39,9 +40,135 @@ def paragraph_style_name(paragraph) -> str:
         return ""
 
 
+def paragraph_style_id(paragraph) -> str:
+    try:
+        return paragraph.style.style_id
+    except Exception:
+        return ""
+
+
+def xml_bool(run_rpr, tag_name: str):
+    if run_rpr is None:
+        return None
+    node = run_rpr.find(qn(f"w:{tag_name}"))
+    if node is None:
+        return None
+    val = node.get(qn("w:val"))
+    return False if val in {"0", "false", "False"} else True
+
+
+def xml_child_val(parent, tag_name: str) -> str | None:
+    if parent is None:
+        return None
+    node = parent.find(qn(f"w:{tag_name}"))
+    if node is None:
+        return None
+    return node.get(qn("w:val"))
+
+
+def run_format_signature(run) -> dict:
+    rpr = run._element.rPr
+    fonts = {}
+    if rpr is not None:
+        rfonts = rpr.find(qn("w:rFonts"))
+        if rfonts is not None:
+            fonts = {key.split("}")[-1]: value for key, value in rfonts.attrib.items()}
+    return {
+        "fonts": fonts,
+        "size": xml_child_val(rpr, "sz"),
+        "bold": xml_bool(rpr, "b"),
+        "italic": xml_bool(rpr, "i"),
+        "underline": xml_child_val(rpr, "u"),
+        "color": xml_child_val(rpr, "color"),
+        "vert_align": xml_child_val(rpr, "vertAlign"),
+    }
+
+
+def paragraph_format_signature(paragraph) -> dict:
+    return {
+        "style": paragraph_style_name(paragraph),
+        "style_id": paragraph_style_id(paragraph),
+        "alignment": str(paragraph.alignment),
+        "run_count": len(paragraph.runs),
+        "run_formats": [run_format_signature(run) for run in paragraph.runs],
+    }
+
+
+def paragraphs_before_marker(doc: Document, marker: str) -> tuple[list, bool]:
+    needle = normalize(marker)
+    paragraphs = []
+    for paragraph in doc.paragraphs:
+        if needle and needle in normalize(paragraph.text):
+            return paragraphs, True
+        paragraphs.append(paragraph)
+    return paragraphs, False
+
+
+def compare_protected_front_matter(
+    template_path: Path,
+    final_doc: Document,
+    *,
+    protected_until: str,
+    max_diffs: int,
+) -> tuple[dict, list[str]]:
+    template_doc = Document(str(template_path))
+    template_paragraphs, template_found = paragraphs_before_marker(
+        template_doc, protected_until
+    )
+    final_paragraphs, final_found = paragraphs_before_marker(final_doc, protected_until)
+
+    diffs = []
+    failures: list[str] = []
+    if not template_found:
+        failures.append(f"protected marker missing in template: {protected_until}")
+    if not final_found:
+        failures.append(f"protected marker missing in final docx: {protected_until}")
+    if len(template_paragraphs) != len(final_paragraphs):
+        failures.append(
+            "protected front matter paragraph count changed: "
+            f"{len(template_paragraphs)} != {len(final_paragraphs)}"
+        )
+
+    for idx, (template_p, final_p) in enumerate(
+        zip(template_paragraphs, final_paragraphs)
+    ):
+        template_sig = paragraph_format_signature(template_p)
+        final_sig = paragraph_format_signature(final_p)
+        if template_sig == final_sig:
+            continue
+        if len(diffs) < max_diffs:
+            diffs.append(
+                {
+                    "index": idx,
+                    "template_text": template_p.text[:120],
+                    "final_text": final_p.text[:120],
+                    "template_format": template_sig,
+                    "final_format": final_sig,
+                }
+            )
+
+    if diffs:
+        failures.append("protected front matter formatting changed")
+
+    report = {
+        "template": str(template_path),
+        "protected_until": protected_until,
+        "template_marker_found": template_found,
+        "final_marker_found": final_found,
+        "template_paragraph_count": len(template_paragraphs),
+        "final_paragraph_count": len(final_paragraphs),
+        "diff_count_sampled": len(diffs),
+        "diffs": diffs,
+    }
+    return report, failures
+
+
 def collect_docx_report(
     docx_path: Path,
     *,
+    template_path: Path | None,
+    protected_until: str | None,
+    protected_max_diffs: int,
     placeholders: list[str],
     ordered_terms: list[str],
     required_headings: list[str],
@@ -118,6 +245,15 @@ def collect_docx_report(
         "section_headers": section_headers,
         "forbidden_header_hits": forbidden_header_hits,
     }
+    if template_path and protected_until:
+        protected_report, protected_failures = compare_protected_front_matter(
+            template_path,
+            doc,
+            protected_until=protected_until,
+            max_diffs=protected_max_diffs,
+        )
+        report["protected_front_matter"] = protected_report
+        failures.extend(protected_failures)
     return report, failures
 
 
@@ -146,6 +282,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("docx")
     parser.add_argument("--pdf", default=None)
+    parser.add_argument("--template", default=None)
+    parser.add_argument(
+        "--protected-until",
+        default=None,
+        help="Marker that starts generated content; compare template formatting before it",
+    )
+    parser.add_argument("--protected-max-diffs", type=int, default=20)
     parser.add_argument("--out", default=None)
     parser.add_argument("--placeholder", action="append", default=[])
     parser.add_argument("--no-default-placeholders", action="store_true")
@@ -155,6 +298,8 @@ def main() -> int:
     parser.add_argument("--min-images", type=int, default=0)
     parser.add_argument("--min-tables", type=int, default=0)
     args = parser.parse_args()
+    if bool(args.template) != bool(args.protected_until):
+        parser.error("--template and --protected-until must be used together")
 
     docx_path = Path(args.docx)
     placeholders = list(args.placeholder)
@@ -163,6 +308,9 @@ def main() -> int:
 
     docx_report, failures = collect_docx_report(
         docx_path,
+        template_path=Path(args.template) if args.template else None,
+        protected_until=args.protected_until,
+        protected_max_diffs=args.protected_max_diffs,
         placeholders=placeholders,
         ordered_terms=args.ordered_term,
         required_headings=args.required_heading,

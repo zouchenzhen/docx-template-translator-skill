@@ -28,6 +28,11 @@ LaTeX-thesis-to-Word conversion.
 - After deleting sample sections, the remaining `sectPr` can still reference the
   last sample header, producing a stale body header such as `致谢`. Header and
   footer references must be inspected and cleared or rebuilt.
+- A pipeline can still start from `Document(template)` and corrupt the template:
+  deleting/recreating runs in cover placeholders or running a whole-document
+  body-style pass can turn native cover/declaration paragraphs into `论文正文`.
+  Content checks may pass while the two covers and originality/signature pages
+  lose their formatting.
 
 ## What Worked
 
@@ -41,7 +46,8 @@ LaTeX-thesis-to-Word conversion.
 3. Build a project-specific pipeline from the starter script, saved in the run
    or project output directory.
 4. Keep/fill the template's native cover, English cover, originality statement,
-   authorization statement, abstract headings, and TOC style.
+   authorization statement, abstract headings, and TOC style. Treat the cover,
+   declaration, authorization, and signature pages as protected regions.
 5. Delete template-only sample content, including sample abstracts, sample
    chapters, sample references, sample appendices, and sample acknowledgements.
 6. Insert the real rough pandoc body at the body start, or rebuild the document
@@ -52,7 +58,9 @@ LaTeX-thesis-to-Word conversion.
    style name before appending, so source `Heading 1/2/3` keep their heading
    semantics inside the template.
 9. Remap body paragraphs from `Normal`/`Body Text` to the template's real
-   thesis body style (`论文正文` in the case study).
+   thesis body style (`论文正文` in the case study), but only inside the generated
+   abstract/body/back-matter scope. Do not apply this pass to the native cover
+   or declaration pages.
 10. Clear or rebuild inherited section header/footer references after deleting
     template sample pages; verify the PDF does not show `致谢` or another
     back-matter header on abstract/body pages.
@@ -66,6 +74,10 @@ LaTeX-thesis-to-Word conversion.
     superscript internal hyperlinks.
 16. Force hyperlinks to black/no underline for print-style thesis output.
 17. Use Word COM to update TOC/fields and export a PDF preview.
+18. Validate protected front matter against the original template, using
+    `validate_docx_conversion.py --template ... --protected-until "中 文 摘 要"`.
+    Metadata text may differ, but paragraph styles, run-level fonts/sizes/bold,
+    alignment, spacing, and page-break structure must not drift.
 
 ## Required QA Checks
 
@@ -82,6 +94,12 @@ Treat any of the following as FAIL and iterate before reporting completion:
   chapters.
 - Chinese/English abstracts or keywords come from the template instead of the
   source `.tex` files.
+- Cover pages, English cover pages, originality/declaration pages, authorization
+  pages, or signature/date lines change from their template styles to `论文正文`
+  or otherwise lose run-level font/size/bold formatting.
+- A project pipeline uses a function like `set_paragraph_text()` that removes
+  all runs in protected front matter, or an `apply_final_styles()` pass that
+  iterates over every paragraph/table without a generated-content scope marker.
 
 ## Libraries Used
 

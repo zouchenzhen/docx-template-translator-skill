@@ -43,6 +43,14 @@ Configuration:
                              with the same visible style name. On by default;
                              this prevents Heading 1/2/3 from turning into an
                              unrelated template style when style ids collide.
+  formatting_start_marker   Only apply global body/caption/table/hyperlink
+                             formatting at or after this normalized marker.
+                             Use this to protect native cover/declaration pages.
+  formatting_end_marker     Optional normalized marker where global formatting
+                             stops.
+  formatting_include_start_marker
+                             Whether the start marker paragraph is in scope.
+                             Default true.
   clear_header_references   Remove section header references after reconstruction.
                              Use when deleting template sample sections leaves
                              a back-matter header such as 致谢 on body pages.
@@ -73,6 +81,132 @@ DEFAULT_BODY_CANDIDATE_STYLES = ("Normal", "Body Text", "正文", "标准")
 # Generic caption pattern: 图/表/Figure/Fig./Table/Tab. + number, with optional
 # section-style numbering like "3.1" / "3-1".
 DEFAULT_CAPTION_REGEX = r"^(图|表|Figure|Fig\.|Table|Tab\.)\s*\d+([.\-]\d+)?\s+"
+
+
+def normalize_marker_text(text: str | None) -> str:
+    return re.sub(r"\s+", "", text or "")
+
+
+def body_element_text(element) -> str:
+    return "".join(t.text or "" for t in element.iter(qn("w:t")))
+
+
+def body_elements_in_marker_scope(
+    doc: Document,
+    *,
+    start_marker: str | None = None,
+    end_marker: str | None = None,
+    include_start_marker: bool = True,
+):
+    """Yield top-level body elements inside a marker-delimited formatting scope.
+
+    Institutional templates often have cover/declaration pages before the real
+    abstract/body. Global style passes must be scoped so those native template
+    pages remain byte-for-byte close to the template except intentional text
+    replacements.
+    """
+    normalized_start = normalize_marker_text(start_marker)
+    normalized_end = normalize_marker_text(end_marker)
+    in_scope = not normalized_start
+    found_start = not normalized_start
+
+    for child in doc.element.body:
+        child_text = normalize_marker_text(body_element_text(child))
+        if not in_scope:
+            if normalized_start and normalized_start in child_text:
+                in_scope = True
+                found_start = True
+                if include_start_marker:
+                    yield child
+                continue
+        else:
+            if normalized_end and normalized_end in child_text:
+                break
+            yield child
+
+    if normalized_start and not found_start:
+        raise ValueError(f"formatting_start_marker not found: {start_marker}")
+
+
+def iter_paragraphs_in_marker_scope(
+    doc: Document,
+    *,
+    start_marker: str | None = None,
+    end_marker: str | None = None,
+    include_start_marker: bool = True,
+):
+    allowed = {
+        id(element)
+        for element in body_elements_in_marker_scope(
+            doc,
+            start_marker=start_marker,
+            end_marker=end_marker,
+            include_start_marker=include_start_marker,
+        )
+        if element.tag == qn("w:p")
+    }
+    for paragraph in doc.paragraphs:
+        if id(paragraph._p) in allowed:
+            yield paragraph
+
+
+def table_ids_in_marker_scope(
+    doc: Document,
+    *,
+    start_marker: str | None = None,
+    end_marker: str | None = None,
+    include_start_marker: bool = True,
+) -> set[int] | None:
+    if not start_marker and not end_marker:
+        return None
+    return {
+        id(element)
+        for element in body_elements_in_marker_scope(
+            doc,
+            start_marker=start_marker,
+            end_marker=end_marker,
+            include_start_marker=include_start_marker,
+        )
+        if element.tag == qn("w:tbl")
+    }
+
+
+def replace_paragraph_text_preserving_runs(paragraph, text: str) -> None:
+    """Replace visible paragraph text without deleting paragraph/run formatting."""
+    text_runs = [run for run in paragraph.runs if run.text]
+    if not text_runs:
+        paragraph.add_run(text)
+        return
+    first = text_runs[0]
+    first.text = text
+    for run in paragraph.runs:
+        if run is not first and run.text:
+            run.text = ""
+
+
+def replace_text_preserving_format(
+    paragraph,
+    needle: str,
+    replacement: str,
+    *,
+    compact_match: bool = False,
+) -> bool:
+    """Replace a placeholder while preserving the template paragraph shape.
+
+    Prefer exact in-run replacement. If the placeholder spans multiple runs or
+    uses spacing that needs compact matching, keep the existing runs and only
+    move the replacement text into the first text run.
+    """
+    if not needle:
+        return False
+    for run in paragraph.runs:
+        if needle in run.text:
+            run.text = run.text.replace(needle, replacement)
+            return True
+    if compact_match and normalize_marker_text(needle) in normalize_marker_text(paragraph.text):
+        replace_paragraph_text_preserving_runs(paragraph, replacement)
+        return True
+    return False
 
 
 def set_east_asia_font(run, font_name: str) -> None:
@@ -231,6 +365,9 @@ def format_three_line_tables(
     font_name: str | None = None,
     east_asia_font: str | None = None,
     font_size_pt: float | None = None,
+    start_marker: str | None = None,
+    end_marker: str | None = None,
+    include_start_marker: bool = True,
 ) -> None:
     """Coerce every table into a three-line table.
 
@@ -238,7 +375,15 @@ def format_three_line_tables(
     Don't enable it unless your template actually requires this layout —
     activate via --three-line-tables or enable_three_line_tables in config.
     """
+    allowed_tables = table_ids_in_marker_scope(
+        doc,
+        start_marker=start_marker,
+        end_marker=end_marker,
+        include_start_marker=include_start_marker,
+    )
     for table in doc.tables:
+        if allowed_tables is not None and id(table._tbl) not in allowed_tables:
+            continue
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         for row in table.rows:
             for cell in row.cells:
@@ -263,8 +408,22 @@ def format_three_line_tables(
                 set_cell_border(cell, "bottom", val="single", size=12)
 
 
-def normalize_hyperlinks_black(doc: Document) -> None:
-    for hyperlink in doc.element.body.iter(qn("w:hyperlink")):
+def normalize_hyperlinks_black(
+    doc: Document,
+    *,
+    start_marker: str | None = None,
+    end_marker: str | None = None,
+    include_start_marker: bool = True,
+) -> None:
+    elements = list(
+        body_elements_in_marker_scope(
+            doc,
+            start_marker=start_marker,
+            end_marker=end_marker,
+            include_start_marker=include_start_marker,
+        )
+    )
+    for hyperlink in (link for element in elements for link in element.iter(qn("w:hyperlink"))):
         for run_el in hyperlink.findall(qn("w:r")):
             rpr = run_el.find(qn("w:rPr"))
             if rpr is None:
@@ -293,9 +452,17 @@ def apply_basic_style_mapping(
     body_font_name: str | None,
     body_east_asia_font: str | None,
     body_font_size_pt: float | None,
+    start_marker: str | None = None,
+    end_marker: str | None = None,
+    include_start_marker: bool = True,
 ) -> None:
     caption_re = re.compile(caption_regex)
-    for paragraph in doc.paragraphs:
+    for paragraph in iter_paragraphs_in_marker_scope(
+        doc,
+        start_marker=start_marker,
+        end_marker=end_marker,
+        include_start_marker=include_start_marker,
+    ):
         text = re.sub(r"\s+", "", paragraph.text)
         if (
             paragraph.style.name in unnumbered_heading_styles
@@ -366,6 +533,9 @@ def main() -> int:
         body_doc,
         remap_styles_by_name=cfg.get("remap_styles_by_name", True),
     )
+    formatting_start_marker = cfg.get("formatting_start_marker")
+    formatting_end_marker = cfg.get("formatting_end_marker")
+    formatting_include_start_marker = cfg.get("formatting_include_start_marker", True)
 
     apply_basic_style_mapping(
         template_doc,
@@ -381,6 +551,9 @@ def main() -> int:
         body_font_name=cfg.get("body_font_name"),
         body_east_asia_font=cfg.get("body_east_asia_font"),
         body_font_size_pt=cfg.get("body_font_size_pt"),
+        start_marker=formatting_start_marker,
+        end_marker=formatting_end_marker,
+        include_start_marker=formatting_include_start_marker,
     )
 
     enable_three_line_tables = args.three_line_tables or cfg.get(
@@ -392,13 +565,21 @@ def main() -> int:
             font_name=cfg.get("table_font_name"),
             east_asia_font=cfg.get("table_east_asia_font"),
             font_size_pt=cfg.get("table_font_size_pt"),
+            start_marker=formatting_start_marker,
+            end_marker=formatting_end_marker,
+            include_start_marker=formatting_include_start_marker,
         )
 
     enable_black_hyperlinks = (not args.keep_hyperlink_color) and cfg.get(
         "enable_black_hyperlinks", True
     )
     if enable_black_hyperlinks:
-        normalize_hyperlinks_black(template_doc)
+        normalize_hyperlinks_black(
+            template_doc,
+            start_marker=formatting_start_marker,
+            end_marker=formatting_end_marker,
+            include_start_marker=formatting_include_start_marker,
+        )
 
     if cfg.get("heading_1_page_breaks", False):
         force_heading_page_breaks(

@@ -27,18 +27,21 @@ Do not treat the bundled starter pipeline or a preset JSON file as a finished co
    - Start from `scripts/adaptive_docx_pipeline.py`.
    - Copy it into the run/output directory or project workspace before patching; do not edit the bundled script in place for a one-off conversion.
    - Decide, from the template inspection, which template paragraphs/tables/sections are reusable and which are sample placeholders to delete.
+   - Mark protected native-template regions before coding. For thesis templates, cover pages, English cover pages, originality/declaration pages, authorization pages, signatures, and their section breaks are protected by default until the first generated abstract/body marker.
    - Replace or fill template front matter such as cover pages, declarations, abstracts, keywords, TOC placeholders, headers, footers, page numbering, and section breaks when the source provides those fields.
+   - In protected regions, replace text inside existing paragraphs/runs/tables without deleting and rebuilding the paragraph. Preserve paragraph styles, run fonts/sizes/bold, alignment, spacing, and page breaks unless the user explicitly asks to alter the template.
    - Insert the rough body at the real body start or rebuild the document around the template parts. Do not blindly append the rough body to the end of the template.
    - Copy template front matter if needed.
    - Append rough body content while remapping DOCX relationships.
    - Remap copied style IDs by visible style name before applying formatting; otherwise `Heading 1/2/3` can silently become an unrelated template style when source and template style IDs collide.
    - Remap styles to the template's real body, heading, caption, reference, and TOC styles.
+   - Scope global formatting passes to generated content only, for example with `formatting_start_marker`. Never run body-style remapping across native cover/declaration pages.
    - Clean or rebuild section header/footer references when deleting sample template sections; stale back-matter headers such as `致谢` must not appear on body pages.
    - Add or repair figure/table captions, table borders, hyperlinks, bookmarks, citations, and page breaks.
 5. Finalize with Microsoft Word when available:
    - Use `scripts/finalize_word_docx.py` to update fields/TOC and export a PDF preview.
 6. Automated and visual verification:
-   - Use `scripts/validate_docx_conversion.py final.docx --pdf final.pdf --out validation.json` for placeholder/order/header/image/table checks.
+   - Use `scripts/validate_docx_conversion.py final.docx --template template.docx --protected-until "中 文 摘 要" --pdf final.pdf --out validation.json` for placeholder/order/header/image/table checks plus protected-front-matter format checks. Choose the real first generated marker for non-Zhengzhou templates.
    - Use `scripts/render_pdf_preview.py` to inspect cover pages, abstracts, TOC, representative tables, figures, formulas, and references.
 
 ## Mandatory Quality Gate
@@ -48,6 +51,7 @@ Before reporting success, run an automated and visual QA pass. If any check fail
 - Confirm the rough body is not appended after a back-matter placeholder such as `致谢`, `Acknowledgements`, `参考文献`, or sample appendices.
 - Confirm template placeholder text is gone or intentionally preserved. Common failures include names like `李四`, `王五`, `张三`, red formatting instructions, lorem ipsum, sample chapter headings, and template-only reference lists.
 - Confirm source metadata and source front matter replaced the template placeholders: title, author, advisor, major/department, date, Chinese abstract, English abstract, keywords, declarations when applicable.
+- Confirm protected front matter still matches the template's formatting. Content may change, but cover/declaration/signature pages must preserve paragraph styles, run-level fonts/sizes/bold, spacing, alignment, and page-break structure unless explicitly modified.
 - Confirm TOC entries point to the generated source chapters, not only to the template's sample chapters.
 - Confirm heading paragraphs are still heading styles after OOXML insertion; style ID collisions must not break TOC generation.
 - Confirm body pages use the intended body style and do not inherit the last template section's header/footer.
@@ -58,6 +62,8 @@ Before reporting success, run an automated and visual QA pass. If any check fail
 
 - Prefer deterministic Python and OOXML operations over manual Word edits.
 - Preserve content first; only change formatting unless the user explicitly asks to edit text.
+- Treat native cover/declaration/signature pages as protected regions. Do not use delete-and-recreate paragraph replacement there; mutate existing runs/cells or use a project-specific OOXML placeholder replacement that preserves formatting.
+- Any all-document style, table, hyperlink, heading-page-break, or font pass must have an explicit scope. If the template has front matter, start the scope after the protected marker rather than iterating over every `doc.paragraphs` / `doc.tables`.
 - Keep a generated PDF preview beside the final DOCX.
 - After copying OOXML between DOCX files, remap `w:pStyle`, `w:rStyle`, and `w:tblStyle` IDs by visible style name unless you have a stronger project-specific mapping.
 - If the template contains sample back matter, explicitly inspect or remove section `headerReference` / `footerReference` entries after deleting sample sections.
@@ -72,9 +78,9 @@ Before reporting success, run an automated and visual QA pass. If any check fail
 ## Script Guide
 
 - `scripts/inspect_docx_template.py`: dumps template styles (including those defined but unused in the body), paragraphs, tables, section settings, numbering hints, and hyperlink colors.
-- `scripts/adaptive_docx_pipeline.py`: reusable starter pipeline for template-based reconstruction. It is a code base to copy and patch, not a final institutional-template converter. Behavior is config-driven (`--config`). It now remaps copied DOCX style IDs by visible style name by default. Optional config keys include `clear_header_references`, `clear_footer_references`, and `heading_1_page_breaks`. Three-line tables and other Chinese-thesis-specific tweaks are opt-in.
+- `scripts/adaptive_docx_pipeline.py`: reusable starter pipeline for template-based reconstruction. It is a code base to copy and patch, not a final institutional-template converter. Behavior is config-driven (`--config`). It remaps copied DOCX style IDs by visible style name by default, provides run-preserving replacement helpers for protected regions, and can scope formatting with `formatting_start_marker` / `formatting_end_marker`. Optional config keys include `clear_header_references`, `clear_footer_references`, and `heading_1_page_breaks`. Three-line tables and other Chinese-thesis-specific tweaks are opt-in.
 - `scripts/finalize_word_docx.py`: updates Word fields/TOC and optionally exports PDF through Word COM. Disables macros for safety, bootstraps missing Windows environment variables, and falls back through `EnsureDispatch`, `DispatchEx`, and `Dispatch`; use `--prefer-dispatch-ex` when an existing Word instance is unreliable.
-- `scripts/validate_docx_conversion.py`: automated QA for common failures, including template placeholders, body/back-matter ordering, heading-style preservation, inherited section headers, and image/table counts.
+- `scripts/validate_docx_conversion.py`: automated QA for common failures, including template placeholders, body/back-matter ordering, heading-style preservation, inherited section headers, image/table counts, and protected front-matter format drift against the original template.
 - `scripts/render_pdf_preview.py`: renders selected PDF pages into contact sheets for visual QA.
 - `presets/zhengzhou_thesis.json`: style/table/hyperlink config for the Zhengzhou-University case study. It does not delete sample pages, fill cover fields, replace abstracts, rebuild TOC, or repair section headers by itself.
 
