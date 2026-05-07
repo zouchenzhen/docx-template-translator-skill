@@ -39,6 +39,15 @@ Configuration:
   enable_black_hyperlinks    Force hyperlinks to black / no underline. On by
                              default for print-style thesis output. CLI:
                              --keep-hyperlink-color disables it.
+  remap_styles_by_name      Remap copied source style ids to template style ids
+                             with the same visible style name. On by default;
+                             this prevents Heading 1/2/3 from turning into an
+                             unrelated template style when style ids collide.
+  clear_header_references   Remove section header references after reconstruction.
+                             Use when deleting template sample sections leaves
+                             a back-matter header such as 致谢 on body pages.
+  clear_footer_references   Remove section footer references after reconstruction.
+  heading_1_page_breaks     Force Heading 1 paragraphs to start on a new page.
 
   See presets/ for ready-to-use config samples (e.g. zhengzhou_thesis.json).
 """
@@ -93,8 +102,42 @@ def suppress_heading_number(paragraph) -> None:
     num_id.set(qn("w:val"), "0")
 
 
-def append_docx_body_preserve_relationships(target_doc: Document, source_doc: Document) -> None:
-    """Append source body XML to target, remapping image/hyperlink relationships."""
+def build_style_id_map(target_doc: Document, source_doc: Document) -> dict[str, str]:
+    """Map source style ids to target style ids by visible style name.
+
+    python-docx exposes paragraph.style.name, but copied OOXML stores style ids
+    such as Heading1. Institutional templates often reuse different ids for the
+    same visible style names, so appending raw source XML can silently turn
+    Heading 1 into a body style.
+    """
+    target_by_name = {style.name: style.style_id for style in target_doc.styles}
+    mapping: dict[str, str] = {}
+    for style in source_doc.styles:
+        target_style_id = target_by_name.get(style.name)
+        if target_style_id:
+            mapping[style.style_id] = target_style_id
+    return mapping
+
+
+def remap_style_ids(element, style_id_map: dict[str, str]) -> None:
+    if not style_id_map:
+        return
+    style_tags = {qn("w:pStyle"), qn("w:rStyle"), qn("w:tblStyle")}
+    for node in element.iter():
+        if node.tag not in style_tags:
+            continue
+        old_style_id = node.get(qn("w:val"))
+        if old_style_id in style_id_map:
+            node.set(qn("w:val"), style_id_map[old_style_id])
+
+
+def append_docx_body_preserve_relationships(
+    target_doc: Document,
+    source_doc: Document,
+    *,
+    remap_styles_by_name: bool = True,
+) -> None:
+    """Append source body XML to target, remapping relationships and styles."""
     target_body = target_doc.element.body
     sect_pr = target_body.sectPr
     if sect_pr is not None:
@@ -102,6 +145,7 @@ def append_docx_body_preserve_relationships(target_doc: Document, source_doc: Do
 
     relmap: dict[str, str] = {}
     rel_attrs = {qn("r:id"), qn("r:embed"), qn("r:link")}
+    style_id_map = build_style_id_map(target_doc, source_doc) if remap_styles_by_name else {}
 
     def remap_relationships(element) -> None:
         for node in element.iter():
@@ -128,10 +172,40 @@ def append_docx_body_preserve_relationships(target_doc: Document, source_doc: Do
             continue
         copied = copy.deepcopy(child)
         remap_relationships(copied)
+        remap_style_ids(copied, style_id_map)
         target_body.append(copied)
 
     if sect_pr is not None:
         target_body.append(sect_pr)
+
+
+def clear_section_references(
+    doc: Document,
+    *,
+    headers: bool = False,
+    footers: bool = False,
+) -> None:
+    """Remove inherited section header/footer references.
+
+    Use this after deleting template sample sections if generated body pages
+    inherit a stale back-matter header such as 致谢 or 参考文献.
+    """
+    for section in doc.sections:
+        sect_pr = section._sectPr
+        if headers:
+            for ref in list(sect_pr.findall(qn("w:headerReference"))):
+                sect_pr.remove(ref)
+        if footers:
+            for ref in list(sect_pr.findall(qn("w:footerReference"))):
+                sect_pr.remove(ref)
+
+
+def force_heading_page_breaks(
+    doc: Document, heading_styles: tuple[str, ...] = DEFAULT_UNNUMBERED_HEADING_STYLES
+) -> None:
+    for paragraph in doc.paragraphs:
+        if paragraph.style.name in heading_styles:
+            paragraph.paragraph_format.page_break_before = True
 
 
 def set_cell_border(cell, edge: str, *, val: str = "nil", size: int = 0) -> None:
@@ -287,7 +361,11 @@ def main() -> int:
     template_doc = Document(args.template)
     body_doc = Document(args.body_docx)
 
-    append_docx_body_preserve_relationships(template_doc, body_doc)
+    append_docx_body_preserve_relationships(
+        template_doc,
+        body_doc,
+        remap_styles_by_name=cfg.get("remap_styles_by_name", True),
+    )
 
     apply_basic_style_mapping(
         template_doc,
@@ -321,6 +399,18 @@ def main() -> int:
     )
     if enable_black_hyperlinks:
         normalize_hyperlinks_black(template_doc)
+
+    if cfg.get("heading_1_page_breaks", False):
+        force_heading_page_breaks(
+            template_doc,
+            tuple(cfg.get("heading_1_styles", DEFAULT_UNNUMBERED_HEADING_STYLES)),
+        )
+
+    clear_section_references(
+        template_doc,
+        headers=cfg.get("clear_header_references", False),
+        footers=cfg.get("clear_footer_references", False),
+    )
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

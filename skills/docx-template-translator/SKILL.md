@@ -17,7 +17,8 @@ Do not treat the bundled starter pipeline or a preset JSON file as a finished co
    - Source: `.tex` project, `.pdf`, `.md`, or an existing rough `.docx`.
    - Template: required `.docx`.
    - Output location and document metadata.
-2. Inspect the template with `scripts/inspect_docx_template.py`.
+2. Inspect the template with the real CLI form:
+   - `python scripts/inspect_docx_template.py template.docx --out template_report.json`
 3. Create a rough body `.docx`:
    - LaTeX/Markdown: use pandoc when available.
    - PDF: try Word COM import or `pdf2docx`; prefer PDF only when the original source is unavailable.
@@ -30,11 +31,14 @@ Do not treat the bundled starter pipeline or a preset JSON file as a finished co
    - Insert the rough body at the real body start or rebuild the document around the template parts. Do not blindly append the rough body to the end of the template.
    - Copy template front matter if needed.
    - Append rough body content while remapping DOCX relationships.
+   - Remap copied style IDs by visible style name before applying formatting; otherwise `Heading 1/2/3` can silently become an unrelated template style when source and template style IDs collide.
    - Remap styles to the template's real body, heading, caption, reference, and TOC styles.
+   - Clean or rebuild section header/footer references when deleting sample template sections; stale back-matter headers such as `致谢` must not appear on body pages.
    - Add or repair figure/table captions, table borders, hyperlinks, bookmarks, citations, and page breaks.
 5. Finalize with Microsoft Word when available:
    - Use `scripts/finalize_word_docx.py` to update fields/TOC and export a PDF preview.
-6. Visually verify:
+6. Automated and visual verification:
+   - Use `scripts/validate_docx_conversion.py final.docx --pdf final.pdf --out validation.json` for placeholder/order/header/image/table checks.
    - Use `scripts/render_pdf_preview.py` to inspect cover pages, abstracts, TOC, representative tables, figures, formulas, and references.
 
 ## Mandatory Quality Gate
@@ -45,6 +49,7 @@ Before reporting success, run an automated and visual QA pass. If any check fail
 - Confirm template placeholder text is gone or intentionally preserved. Common failures include names like `李四`, `王五`, `张三`, red formatting instructions, lorem ipsum, sample chapter headings, and template-only reference lists.
 - Confirm source metadata and source front matter replaced the template placeholders: title, author, advisor, major/department, date, Chinese abstract, English abstract, keywords, declarations when applicable.
 - Confirm TOC entries point to the generated source chapters, not only to the template's sample chapters.
+- Confirm heading paragraphs are still heading styles after OOXML insertion; style ID collisions must not break TOC generation.
 - Confirm body pages use the intended body style and do not inherit the last template section's header/footer.
 - Confirm representative images, formulas, tables, captions, references, and citations survive the reconstruction.
 - Record failures in the run report with PASS/FAIL/PARTIAL wording and concrete evidence.
@@ -54,6 +59,8 @@ Before reporting success, run an automated and visual QA pass. If any check fail
 - Prefer deterministic Python and OOXML operations over manual Word edits.
 - Preserve content first; only change formatting unless the user explicitly asks to edit text.
 - Keep a generated PDF preview beside the final DOCX.
+- After copying OOXML between DOCX files, remap `w:pStyle`, `w:rStyle`, and `w:tblStyle` IDs by visible style name unless you have a stronger project-specific mapping.
+- If the template contains sample back matter, explicitly inspect or remove section `headerReference` / `footerReference` entries after deleting sample sections.
 - For LaTeX, extract structured information from `.tex`, `.aux`, `.bbl`, `.toc`, and source captions when pandoc loses numbering or labels.
 - For equations, preserve pandoc-generated OMML when possible; avoid touching paragraphs containing `m:oMath` unless necessary.
 - For hyperlinks, explicitly set black/no-underline styling if the target template requires print-style links.
@@ -65,8 +72,9 @@ Before reporting success, run an automated and visual QA pass. If any check fail
 ## Script Guide
 
 - `scripts/inspect_docx_template.py`: dumps template styles (including those defined but unused in the body), paragraphs, tables, section settings, numbering hints, and hyperlink colors.
-- `scripts/adaptive_docx_pipeline.py`: reusable starter pipeline for template-based reconstruction. It is a code base to copy and patch, not a final institutional-template converter. Behavior is config-driven (`--config`). Three-line tables and other Chinese-thesis-specific tweaks are opt-in.
-- `scripts/finalize_word_docx.py`: updates Word fields/TOC and optionally exports PDF through Word COM. Disables macros for safety.
+- `scripts/adaptive_docx_pipeline.py`: reusable starter pipeline for template-based reconstruction. It is a code base to copy and patch, not a final institutional-template converter. Behavior is config-driven (`--config`). It now remaps copied DOCX style IDs by visible style name by default. Optional config keys include `clear_header_references`, `clear_footer_references`, and `heading_1_page_breaks`. Three-line tables and other Chinese-thesis-specific tweaks are opt-in.
+- `scripts/finalize_word_docx.py`: updates Word fields/TOC and optionally exports PDF through Word COM. Disables macros for safety, bootstraps missing Windows environment variables, and falls back through `EnsureDispatch`, `DispatchEx`, and `Dispatch`; use `--prefer-dispatch-ex` when an existing Word instance is unreliable.
+- `scripts/validate_docx_conversion.py`: automated QA for common failures, including template placeholders, body/back-matter ordering, heading-style preservation, inherited section headers, and image/table counts.
 - `scripts/render_pdf_preview.py`: renders selected PDF pages into contact sheets for visual QA.
 - `presets/zhengzhou_thesis.json`: style/table/hyperlink config for the Zhengzhou-University case study. It does not delete sample pages, fill cover fields, replace abstracts, rebuild TOC, or repair section headers by itself.
 

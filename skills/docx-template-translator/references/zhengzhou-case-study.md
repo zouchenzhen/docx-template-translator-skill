@@ -21,6 +21,13 @@ LaTeX-thesis-to-Word conversion.
   this template: it keeps the template's sample cover/abstract/chapters and
   appends the real thesis body after the sample back matter. That output must be
   treated as a failed smoke test, not as a partial final document.
+- Copying raw pandoc body XML into this template can trigger style ID collisions:
+  visible `Heading 1/2/3` paragraphs may be interpreted as the template's body
+  style if style IDs are not remapped by style name before insertion. This breaks
+  Word TOC generation even when the visible text looks correct.
+- After deleting sample sections, the remaining `sectPr` can still reference the
+  last sample header, producing a stale body header such as `致谢`. Header and
+  footer references must be inspected and cleared or rebuilt.
 
 ## What Worked
 
@@ -41,18 +48,24 @@ LaTeX-thesis-to-Word conversion.
    around selected template front matter and section settings. Do not append the
    real body to the end of the complete template.
 7. Remap image and hyperlink relationships in OOXML when moving body content.
-8. Remap body paragraphs from `Normal`/`Body Text` to the template's real
+8. Remap copied style IDs (`w:pStyle`, `w:rStyle`, `w:tblStyle`) by visible
+   style name before appending, so source `Heading 1/2/3` keep their heading
+   semantics inside the template.
+9. Remap body paragraphs from `Normal`/`Body Text` to the template's real
    thesis body style (`论文正文` in the case study).
-9. Suppress automatic Heading 1 numbering for front/back matter headings.
-10. Parse LaTeX `\caption{}` text and repair visible captions such as
+10. Clear or rebuild inherited section header/footer references after deleting
+    template sample pages; verify the PDF does not show `致谢` or another
+    back-matter header on abstract/body pages.
+11. Suppress automatic Heading 1 numbering for front/back matter headings.
+12. Parse LaTeX `\caption{}` text and repair visible captions such as
    `图 3.1  本文主线系统架构图`.
-11. Center actual image paragraphs and actual captions only; avoid centering
+13. Center actual image paragraphs and actual captions only; avoid centering
    in-text references like `图 4.4 与表 4.3 分别给出...`.
-12. Format all tables as three-line tables by writing `w:tcBorders` directly.
-13. Add bookmarks at reference entries and convert numeric citations into
+14. Format all tables as three-line tables by writing `w:tcBorders` directly.
+15. Add bookmarks at reference entries and convert numeric citations into
     superscript internal hyperlinks.
-14. Force hyperlinks to black/no underline for print-style thesis output.
-15. Use Word COM to update TOC/fields and export a PDF preview.
+16. Force hyperlinks to black/no underline for print-style thesis output.
+17. Use Word COM to update TOC/fields and export a PDF preview.
 
 ## Required QA Checks
 
@@ -63,6 +76,8 @@ Treat any of the following as FAIL and iterate before reporting completion:
 - The real thesis text appears after `致谢`, sample appendices, or sample
   references.
 - Body pages inherit a back-matter header such as `致谢`.
+- Source chapter headings are not real Word heading styles after reconstruction;
+  this usually means style IDs were copied without remapping.
 - The TOC points to the template sample chapters instead of the real source
   chapters.
 - Chinese/English abstracts or keywords come from the template instead of the
