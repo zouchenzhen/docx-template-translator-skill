@@ -33,6 +33,15 @@ the second image is a direct `pandoc --reference-doc` baseline.
 
 ![direct pandoc baseline](examples/minimal_markdown/expected/pandoc_baseline.png)
 
+> The two screenshots use the same input and the same template, but they keep
+> different **numbering contexts**. The project output preserves the real
+> template's existing front matter and chapter numbering, so the sample
+> sections continue after whatever chapters are already in that template
+> (for example `4.7` or `8.7`, depending on the template contents). The direct
+> pandoc baseline creates a new document from `sample.md` and only reuses
+> `--reference-doc` style definitions, so numbering starts from Chapter 1
+> (for example `1.5`).
+>
 > The comparison shows why `pandoc --reference-doc` alone is not enough for
 > strict institutional templates. It can reuse some style definitions, but it
 > does not understand the template's body semantics and layout constraints:

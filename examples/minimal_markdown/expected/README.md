@@ -62,6 +62,12 @@ alone. It can reuse style definitions, but it does not understand the target
 template's semantic layout rules, nor does it apply this project's adaptive
 three-line-table and caption/body remapping logic.
 
+The numbering differs for the same reason. `preview.png` preserves the real
+template's existing document context, so headings from `sample.md` continue
+after the chapters already present in the template. `pandoc_baseline.png`
+starts a new document from `sample.md`, using the template only as
+`--reference-doc`, so the same headings start under Chapter 1.
+
 Both README images have a light border baked into the PNG itself. This is
 done by drawing the Word/PDF crop onto a slightly larger light-gray canvas and
 adding a thin gray rectangle, rather than by relying on GitHub Markdown/CSS.

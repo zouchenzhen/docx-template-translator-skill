@@ -27,6 +27,12 @@ adaptive pipeline，第二张只直接运行 `pandoc --reference-doc`：
 
 ![直接 pandoc baseline](examples/minimal_markdown/expected/pandoc_baseline.png)
 
+> 两张图使用同一份输入和同一份模板，但**编号上下文不同**：本项目输出会保留
+> 真实模板里已有的前置内容和章节编号，所以示例小节会接在模板原有章节之后
+> （例如显示为 `4.7` / `8.7` 这类编号，取决于模板当前内容）；直接 pandoc
+> baseline 是从 `sample.md` 新建文档，只复用 `--reference-doc` 的样式定义，
+> 因此从第 1 章开始编号（例如 `1.5`）。
+>
 > 对比可以看到：`pandoc --reference-doc` 能复用一部分样式，但它只知道样式定义，
 > 不理解学校模板里的正文语义和版式约束；图表/公式/表格更容易跨页、间距松散，
 > 表格也不是目标模板要求的三线表效果。本项目会先 inspect 模板，再用
