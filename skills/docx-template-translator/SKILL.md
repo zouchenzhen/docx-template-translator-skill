@@ -9,6 +9,8 @@ description: Adaptive conversion of LaTeX, PDF, or Markdown sources into a compl
 
 Treat the input file as the content source and the Word template as the formatting source. Do not expect pandoc or PDF import to infer template semantics. Build a project-specific Python postprocessor after inspecting the template and the converted body document.
 
+Do not treat the bundled starter pipeline or a preset JSON file as a finished converter for institutional templates. For thesis/dissertation templates, you must create or patch a project-specific pipeline for the concrete template and source project before claiming success.
+
 ## Workflow
 
 1. Identify inputs:
@@ -22,6 +24,10 @@ Treat the input file as the content source and the Word template as the formatti
    - Existing DOCX: use it as the rough body source.
 4. Write or patch a project-specific Python pipeline:
    - Start from `scripts/adaptive_docx_pipeline.py`.
+   - Copy it into the run/output directory or project workspace before patching; do not edit the bundled script in place for a one-off conversion.
+   - Decide, from the template inspection, which template paragraphs/tables/sections are reusable and which are sample placeholders to delete.
+   - Replace or fill template front matter such as cover pages, declarations, abstracts, keywords, TOC placeholders, headers, footers, page numbering, and section breaks when the source provides those fields.
+   - Insert the rough body at the real body start or rebuild the document around the template parts. Do not blindly append the rough body to the end of the template.
    - Copy template front matter if needed.
    - Append rough body content while remapping DOCX relationships.
    - Remap styles to the template's real body, heading, caption, reference, and TOC styles.
@@ -30,6 +36,18 @@ Treat the input file as the content source and the Word template as the formatti
    - Use `scripts/finalize_word_docx.py` to update fields/TOC and export a PDF preview.
 6. Visually verify:
    - Use `scripts/render_pdf_preview.py` to inspect cover pages, abstracts, TOC, representative tables, figures, formulas, and references.
+
+## Mandatory Quality Gate
+
+Before reporting success, run an automated and visual QA pass. If any check fails, patch the project-specific pipeline and rerun; do not present the output as complete.
+
+- Confirm the rough body is not appended after a back-matter placeholder such as `致谢`, `Acknowledgements`, `参考文献`, or sample appendices.
+- Confirm template placeholder text is gone or intentionally preserved. Common failures include names like `李四`, `王五`, `张三`, red formatting instructions, lorem ipsum, sample chapter headings, and template-only reference lists.
+- Confirm source metadata and source front matter replaced the template placeholders: title, author, advisor, major/department, date, Chinese abstract, English abstract, keywords, declarations when applicable.
+- Confirm TOC entries point to the generated source chapters, not only to the template's sample chapters.
+- Confirm body pages use the intended body style and do not inherit the last template section's header/footer.
+- Confirm representative images, formulas, tables, captions, references, and citations survive the reconstruction.
+- Record failures in the run report with PASS/FAIL/PARTIAL wording and concrete evidence.
 
 ## Required Engineering Rules
 
@@ -47,10 +65,10 @@ Treat the input file as the content source and the Word template as the formatti
 ## Script Guide
 
 - `scripts/inspect_docx_template.py`: dumps template styles (including those defined but unused in the body), paragraphs, tables, section settings, numbering hints, and hyperlink colors.
-- `scripts/adaptive_docx_pipeline.py`: reusable starter pipeline for template-based reconstruction. Behavior is config-driven (`--config`). Three-line tables and other Chinese-thesis-specific tweaks are opt-in.
+- `scripts/adaptive_docx_pipeline.py`: reusable starter pipeline for template-based reconstruction. It is a code base to copy and patch, not a final institutional-template converter. Behavior is config-driven (`--config`). Three-line tables and other Chinese-thesis-specific tweaks are opt-in.
 - `scripts/finalize_word_docx.py`: updates Word fields/TOC and optionally exports PDF through Word COM. Disables macros for safety.
 - `scripts/render_pdf_preview.py`: renders selected PDF pages into contact sheets for visual QA.
-- `presets/zhengzhou_thesis.json`: example config that reproduces the Zhengzhou-University thesis behaviour described in the case study.
+- `presets/zhengzhou_thesis.json`: style/table/hyperlink config for the Zhengzhou-University case study. It does not delete sample pages, fill cover fields, replace abstracts, rebuild TOC, or repair section headers by itself.
 
 ## References
 

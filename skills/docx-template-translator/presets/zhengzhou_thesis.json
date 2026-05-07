@@ -1,5 +1,5 @@
 {
-  "_comment": "Preset matching the Zhengzhou University thesis template. Pass via --config to reproduce the case-study behaviour (Times New Roman + 宋体 body, three-line tables, black hyperlinks).",
+  "_comment": "Style/table/link config for the Zhengzhou University thesis template. This is not a complete converter: a project-specific pipeline must still delete template sample pages, fill cover fields, replace abstracts, rebuild TOC/sections, and insert the real body at the correct location.",
   "body_style": "论文正文",
   "body_candidate_styles": ["Normal", "Body Text", "正文"],
   "unnumbered_h1": [

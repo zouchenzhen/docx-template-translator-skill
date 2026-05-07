@@ -3,6 +3,9 @@
 
 This script is intentionally not a universal converter. It gives an AI agent a
 safe base to copy and modify for a user's concrete template and source project.
+For institutional templates, running this file unchanged is only a smoke test:
+it appends the rough body to the template and does not delete sample pages, fill
+cover fields, replace abstracts, rebuild TOC entries, or repair sections.
 
 Typical use:
   1. Convert LaTeX/Markdown/PDF into a rough body.docx.
