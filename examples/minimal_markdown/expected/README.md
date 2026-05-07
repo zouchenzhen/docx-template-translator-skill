@@ -38,7 +38,33 @@ python examples/minimal_markdown/run_example.py \
 
 The committed PNG is then cropped from page 20 to remove the unrelated
 running header and page margins, keeping the body region readable in the
-GitHub README. The image is ~280 KB.
+GitHub README. The image is ~313 KB.
+
+## pandoc_baseline.png
+
+`pandoc_baseline.png` is the direct baseline used in the README comparison.
+It uses the same `sample.md` and the same real thesis template, but skips this
+project's inspect/adaptive pipeline:
+
+```bash
+pandoc examples/minimal_markdown/sample.md \
+    --resource-path examples/minimal_markdown \
+    --reference-doc /path/to/your-real-thesis-template.docx \
+    -o pandoc_baseline.docx
+python skills/docx-template-translator/scripts/finalize_word_docx.py \
+    pandoc_baseline.docx --pdf
+```
+
+The committed PNG stacks the relevant rendered PDF pages because the direct
+pandoc output splits the figure/equation/table/caption region across pages.
+This is intentional: it shows the limitation of `pandoc --reference-doc`
+alone. It can reuse style definitions, but it does not understand the target
+template's semantic layout rules, nor does it apply this project's adaptive
+three-line-table and caption/body remapping logic.
+
+Both README images have a light border baked into the PNG itself. This is
+done by drawing the Word/PDF crop onto a slightly larger light-gray canvas and
+adding a thin gray rectangle, rather than by relying on GitHub Markdown/CSS.
 
 Without `--template`, `run_example.py` falls back to the lightweight
 `build_template.py`-generated sample, which is intentionally minimal and

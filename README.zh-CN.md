@@ -15,15 +15,25 @@ python examples/minimal_markdown/run_example.py
 ```
 
 脚本会现场生成一份 sample 模板，依次跑 inspect / adaptive / finalize，并在
-Windows + Word 环境下输出 PDF 预览图：
+Windows + Word 环境下输出 PDF 预览图。下面两张图使用**同一份
+`sample.md` 和同一份真实郑州大学学位论文模板**生成，第一张走本项目的
+adaptive pipeline，第二张只直接运行 `pandoc --reference-doc`：
 
-![正文效果预览](examples/minimal_markdown/expected/preview.png)
+**本项目输出：pandoc → adaptive pipeline → Word finalize**
 
-> 上图是用一份**真实的郑州大学学位论文模板**跑出来的正文细节裁剪图，
-> 来源是示例 `sample.md` 经过 pandoc → adaptive → Word finalize 后的 PDF
-> 第 20 页正文区域。它同时展示了真实插图、图题、正文段落、显示公式和三线表，
-> 比封面或模板自带范例页更能说明这个 skill 对 Markdown 正文内容的处理效果。
-> 生成时使用下面这条命令，然后从第 20 页裁剪出主体区域：
+![本项目正文效果预览](examples/minimal_markdown/expected/preview.png)
+
+**直接 pandoc baseline：只使用 `pandoc --reference-doc`**
+
+![直接 pandoc baseline](examples/minimal_markdown/expected/pandoc_baseline.png)
+
+> 对比可以看到：`pandoc --reference-doc` 能复用一部分样式，但它只知道样式定义，
+> 不理解学校模板里的正文语义和版式约束；图表/公式/表格更容易跨页、间距松散，
+> 表格也不是目标模板要求的三线表效果。本项目会先 inspect 模板，再用
+> adaptive pipeline 映射正文、图题、公式和表格，最后用 Word finalize 导出，
+> 所以更适合严格学校/单位模板。
+>
+> 本项目输出图通过下面这条命令生成，然后从第 20 页裁剪出主体区域：
 >
 > ```bash
 > python examples/minimal_markdown/run_example.py \

@@ -20,18 +20,28 @@ python examples/minimal_markdown/run_example.py
 ```
 
 It generates a tiny sample template, runs the inspect / adaptive / finalize
-pipeline, and (on Windows + Word) renders a PDF preview:
+pipeline, and (on Windows + Word) renders PDF previews. The two images below
+use the **same `sample.md` and the same real Zhengzhou University thesis
+template**: the first image runs through this project's adaptive pipeline, while
+the second image is a direct `pandoc --reference-doc` baseline.
 
-![body preview](examples/minimal_markdown/expected/preview.png)
+**Project output: pandoc → adaptive pipeline → Word finalize**
 
-> The committed screenshot is a **body-content crop** rendered against a real
-> Zhengzhou University undergraduate thesis template (V2). It comes from page
-> 20 of the PDF produced by `sample.md` after pandoc → adaptive → Word
-> finalize, and shows the actual generated sample content: an embedded PNG
-> figure, figure caption, body paragraphs, a display equation, and a
-> three-line table. This demonstrates the skill's Markdown-body handling much
-> better than front matter or the template's bundled sample pages. It was
-> generated with:
+![project body preview](examples/minimal_markdown/expected/preview.png)
+
+**Direct pandoc baseline: only `pandoc --reference-doc`**
+
+![direct pandoc baseline](examples/minimal_markdown/expected/pandoc_baseline.png)
+
+> The comparison shows why `pandoc --reference-doc` alone is not enough for
+> strict institutional templates. It can reuse some style definitions, but it
+> does not understand the template's body semantics and layout constraints:
+> figures/equations/tables can spread loosely across pages, and the table is
+> not adapted into the target three-line-table format. This project inspects
+> the template, remaps body/caption/equation/table structure through the
+> adaptive pipeline, and then asks Word to finalize/export the result.
+>
+> The project output image was generated with:
 >
 > ```bash
 > python examples/minimal_markdown/run_example.py \
