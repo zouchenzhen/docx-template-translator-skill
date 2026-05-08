@@ -44,6 +44,20 @@ fails when any of the following are detected:
     "Acknowledgements", "参考文献", "References", "附录", "Appendix",
     "攻读学位期间…"). The body running header showing "致谢" was the
     first signal that the body+back-matter were collapsed into one section.
+7.  ``--source-latex-dir <dir>`` or ``--min-figures <N>``: count
+    ``<w:drawing>`` in ``document.xml`` and FAIL if it is below the source
+    LaTeX project's ``\\includegraphics`` count. Pandoc silently drops
+    figures whose path lacks an explicit extension (e.g.
+    ``\\includegraphics{thesis_structure}``) when the basename resolves to a
+    vector file (``.pdf`` / ``.vsdx``) it cannot embed. Without this check
+    the structural validator counts what *was* embedded and never knows what
+    *should have been* embedded.
+8.  ``--expected-table-style three-line`` (default ``any``): every data
+    table (>= ``--table-min-data-rows`` rows) must have a recognizable
+    three-line layout (top heavy, header-row bottom thin, last-row bottom
+    heavy, vertical edges nil) or a ``tblStyle`` that may carry borders.
+    A docx that contains 20 borderless tables when the school template
+    requires three-line tables is the failure mode this catches.
 
 Each check is reported individually so a CI run can see exactly which
 rendering invariant broke. Pass ``--allow X`` (e.g. ``--allow toc-field``) to
@@ -98,6 +112,8 @@ CHECK_NAMES = (
     "ref-counter-independence",
     "pdf-field-errors",
     "body-header-non-back-matter",
+    "figure-count-vs-source",
+    "table-border-style",
 )
 
 DEFAULT_CHAPTER_PREFIX_PATTERN = r"(第\s*%1\s*章|Chapter\s+%1)"
@@ -503,6 +519,147 @@ def check_body_header_non_back_matter(
     return {"name": "body-header-non-back-matter", "passed": not failures, "failures": failures}
 
 
+def check_figure_count_vs_source(
+    document_xml: str,
+    source_latex_dir: Path | None,
+    explicit_min_figures: int | None,
+) -> dict:
+    """Compare the count of <w:drawing> elements in document.xml against the
+    number of \\includegraphics references in the LaTeX source directory."""
+    drawings = document_xml.count("<w:drawing")
+    expected = explicit_min_figures
+    source_count = None
+    if source_latex_dir is not None and source_latex_dir.is_dir():
+        source_count = 0
+        for tex in source_latex_dir.rglob("*.tex"):
+            try:
+                source_count += sum(
+                    1
+                    for line in tex.read_text(encoding="utf-8", errors="replace").splitlines()
+                    if "\\includegraphics" in line and not line.lstrip().startswith("%")
+                )
+            except OSError:
+                pass
+        if expected is None:
+            expected = source_count
+    if expected is None:
+        return {
+            "name": "figure-count-vs-source",
+            "passed": True,
+            "evidence": "no --source-latex-dir or --min-figures supplied — skipped",
+            "drawings": drawings,
+        }
+    return {
+        "name": "figure-count-vs-source",
+        "passed": drawings >= expected,
+        "drawings": drawings,
+        "source_includegraphics_count": source_count,
+        "expected_min": expected,
+        "failures": (
+            []
+            if drawings >= expected
+            else [{
+                "reason": "rendered drawing count is below the source includegraphics count; pandoc likely dropped figures whose path lacks an explicit extension or points to a vector file (.pdf/.vsdx) it cannot embed",
+                "drawings": drawings,
+                "expected_min": expected,
+            }]
+        ),
+    }
+
+
+def _table_border_kind(table_xml: str) -> str:
+    """Classify a table's border configuration into one of:
+       'none', 'three-line', 'full-grid', 'partial', 'inherit-style'.
+
+       'inherit-style' means the table has a tblStyle that may carry borders,
+       and we cannot determine purely from this XML what the rendered look is.
+    """
+    rows = re.findall(r"<w:tr\b[^>]*>.*?</w:tr>", table_xml, flags=re.S)
+    if not rows:
+        return "none"
+    cells_in_row = lambda row: re.findall(r"<w:tc\b[^>]*>.*?</w:tc>", row, flags=re.S)
+    first_cells = cells_in_row(rows[0])
+    last_cells = cells_in_row(rows[-1])
+    middle_cells: list[str] = []
+    for r in rows[1:-1]:
+        middle_cells.extend(cells_in_row(r))
+
+    def edge_val(cell_xml: str, edge: str) -> str | None:
+        bdr = re.search(r"<w:tcBorders\b[^>]*>.*?</w:tcBorders>", cell_xml, flags=re.S)
+        if not bdr:
+            return None
+        m = re.search(rf'<w:{edge}\b[^>]*?w:val="([^"]+)"', bdr.group(0))
+        return m.group(1) if m else None
+
+    has_tbl_borders = "<w:tblBorders" in table_xml
+    has_tbl_style = bool(re.search(r"<w:tblStyle\b", table_xml))
+    has_any_tc_borders = "<w:tcBorders" in table_xml
+
+    if not has_tbl_borders and not has_any_tc_borders and has_tbl_style:
+        return "inherit-style"
+    if not has_tbl_borders and not has_any_tc_borders:
+        return "none"
+
+    # try to detect three-line
+    if first_cells and last_cells:
+        first_top = edge_val(first_cells[0], "top")
+        first_bottom = edge_val(first_cells[0], "bottom")
+        last_bottom = edge_val(last_cells[0], "bottom")
+        first_left = edge_val(first_cells[0], "left")
+        first_right = edge_val(first_cells[0], "right")
+        if (
+            first_top in {"single", "thick"}
+            and first_bottom in {"single", "thick"}
+            and last_bottom in {"single", "thick"}
+            and (first_left is None or first_left == "nil")
+            and (first_right is None or first_right == "nil")
+        ):
+            # also check middle rows have no horizontal between (insideH or top/bottom = nil)
+            middle_inside_ok = True
+            for c in middle_cells[:6]:
+                if edge_val(c, "top") == "single":
+                    middle_inside_ok = False
+                    break
+            if middle_inside_ok:
+                return "three-line"
+
+    # full grid: every cell has top/bottom/left/right = single
+    if first_cells:
+        first = first_cells[0]
+        if all(edge_val(first, e) in {"single", "thick"} for e in ("top", "bottom", "left", "right")):
+            return "full-grid"
+
+    return "partial"
+
+
+def check_table_border_style(
+    document_xml: str,
+    expected_style: str,
+    min_data_rows: int,
+) -> dict:
+    """Classify every table's border configuration. FAIL if expected_style is
+    'three-line' and any data table (>= min_data_rows rows) is 'none' / 'partial'.
+    Layout/wrapper tables (single-row tables with very few cells) are skipped."""
+    if expected_style == "any":
+        return {"name": "table-border-style", "passed": True, "evidence": "expected_style=any — skipped"}
+
+    summary: dict[str, int] = {"three-line": 0, "full-grid": 0, "none": 0, "partial": 0, "inherit-style": 0, "skipped-layout": 0}
+    failures: list[dict] = []
+    tables = re.findall(r"<w:tbl\b[^>]*>.*?</w:tbl>", document_xml, flags=re.S)
+    for idx, t in enumerate(tables):
+        rows = re.findall(r"<w:tr\b[^>]*>.*?</w:tr>", t, flags=re.S)
+        if len(rows) < min_data_rows:
+            summary["skipped-layout"] += 1
+            continue
+        kind = _table_border_kind(t)
+        summary[kind] = summary.get(kind, 0) + 1
+        if expected_style == "three-line" and kind not in {"three-line", "inherit-style"}:
+            failures.append({"index": idx, "kind": kind})
+        elif expected_style == "full-grid" and kind not in {"full-grid", "inherit-style"}:
+            failures.append({"index": idx, "kind": kind})
+    return {"name": "table-border-style", "expected_style": expected_style, "summary": summary, "passed": not failures, "failures": failures}
+
+
 # ---- main ----
 
 def main() -> int:
@@ -516,6 +673,15 @@ def main() -> int:
     parser.add_argument("--back-matter-title", action="append", default=DEFAULT_BACK_MATTER_TITLES)
     parser.add_argument("--chapter-prefix-pattern", default=DEFAULT_CHAPTER_PREFIX_PATTERN)
     parser.add_argument("--multilevel-pattern", default=DEFAULT_MULTILEVEL_PATTERN)
+    parser.add_argument("--source-latex-dir", default=None,
+                        help="Directory of LaTeX sources (.tex files); enables figure-count-vs-source check.")
+    parser.add_argument("--min-figures", type=int, default=None,
+                        help="Explicit lower bound for <w:drawing> count. Used when --source-latex-dir not given.")
+    parser.add_argument("--expected-table-style", default="any",
+                        choices=("any", "three-line", "full-grid"),
+                        help="Required table border style. Default 'any' = no enforcement.")
+    parser.add_argument("--table-min-data-rows", type=int, default=2,
+                        help="Tables with fewer rows are skipped as layout/wrapper.")
     args = parser.parse_args()
 
     docx_path = Path(args.docx)
@@ -541,6 +707,16 @@ def main() -> int:
             ),
             check_ref_counter_independence(document_xml, styles_xml, args.reference_marker),
             check_body_header_non_back_matter(zf, document_xml, rels_map, args.back_matter_title),
+            check_figure_count_vs_source(
+                document_xml,
+                Path(args.source_latex_dir) if args.source_latex_dir else None,
+                args.min_figures,
+            ),
+            check_table_border_style(
+                document_xml,
+                expected_style=args.expected_table_style,
+                min_data_rows=args.table_min_data_rows,
+            ),
         ]
         if args.pdf:
             results.append(check_pdf_field_errors(Path(args.pdf)))

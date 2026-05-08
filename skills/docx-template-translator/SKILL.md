@@ -74,6 +74,8 @@ reference repair, or a body section header whose static text is "致谢". Run
 - **Reference counter independence**: any non-heading paragraph appearing after the last `参考文献` / `References` Heading 1 must not reuse a `numId` already used by Heading 1/2/3. This is the bug where 33 references render as `[47]`–`[79]` because their counter was shared with H2/H3 paragraphs upstream.
 - **Body header is not a back-matter literal**: for every body section that uses a `<w:headerReference>`, the referenced `headerN.xml` must either contain a Word field (`<w:fldChar>`) or its static text must not equal `致谢` / `Acknowledgements` / `参考文献` / `附录` / `攻读学位期间…`. The recommended fix is `scripts/set_styleref_header.py --style-id 1` so the header dynamically shows the current chapter title.
 - **PDF field errors absent**: scan the exported PDF for the localized field-error strings (`错误!`, `Error!`, `!Reference source not found`, `!未找到引用源`). These appear when STYLEREF/PAGEREF/REF can't resolve their target and are an immediate FAIL.
+- **Figure count vs source** (`--source-latex-dir <dir>` or `--min-figures <N>`): rendered `<w:drawing>` count must be ≥ the LaTeX project's `\includegraphics` count. Pandoc silently drops figures whose path lacks an explicit extension (e.g. `\includegraphics{thesis_structure}`) when the basename also matches a vector file (`.pdf` / `.vsdx`). The structural validator counts what *was* embedded; this check tells you what *should have been* embedded.
+- **Table border style** (`--expected-table-style three-line` for Chinese-thesis templates, default `any`): every data table must classify as a recognizable three-line layout (top heavy, header-row bottom thin, last-row bottom heavy, vertical edges nil) or a `tblStyle` that may carry borders. A docx that contains 20 borderless tables when the template requires three-line tables is the failure mode this catches. Layout/wrapper tables (≤ `--table-min-data-rows` rows) are skipped.
 
 Demote any single check to a warning with `--allow <check-name>` when a project intentionally omits a TOC, intentionally shares a counter, etc.
 
@@ -92,7 +94,8 @@ Demote any single check to a warning with `--allow <check-name>` when a project 
 - For references, add bookmarks at bibliography entries before converting in-text numeric citations into internal hyperlinks. **Allocate a fresh `numId` (and a matching `<w:abstractNum>` with level 0 = `[%1]`) for the reference list — do not reuse the heading `numId`. Sharing the counter is what produces "33 references rendered as `[47]…[79]`" because the counter accumulates through every Heading 2/3 paragraph upstream.**
 - For institutional templates, avoid generic style names like `Body Text`; inspect the template because those names may be repurposed.
 - For finalization, always run with macros disabled. The bundled `finalize_word_docx.py` sets `Word.Application.AutomationSecurity = msoAutomationSecurityForceDisable` before opening the document; do not loosen this for inputs of unknown provenance.
-- Three-line table coercion is opt-in (`--three-line-tables` or `enable_three_line_tables` in config). Don't enable it unless the target template actually requires that layout.
+- Three-line table coercion is opt-in (`--three-line-tables` or `enable_three_line_tables` in config). Don't enable it unless the target template actually requires that layout. **When you do enable it, also write the borders through the raw `<w:tc>` elements inside the last `<w:tr>` — python-docx's `row.cells` wrappers silently no-op on `vMerge="continue"` cells, leaving a gap in the bottom heavy line at the end of any column whose final cell is a vertical-merge continuation.**
+- For figures, when running pandoc on LaTeX sources, pre-process every `\includegraphics{name}` to `\includegraphics{name.png}` (or whichever raster extension exists alongside) before invoking pandoc. Pandoc resolves bare basenames against the cwd, prefers vector extensions (`.pdf`, `.vsdx`), and silently drops the figure when it cannot embed the vector. Always cross-check the rendered `<w:drawing>` count against the source `\includegraphics` count via `validate_docx_render.py --source-latex-dir`.
 
 ## Common Pitfalls (with concrete fixes)
 
@@ -107,6 +110,28 @@ or rule fixes it.
 - **Body running header reads "致谢".** Body and back-matter were collapsed into one section, and that section uses a `headerReference` whose target `headerN.xml` has the static text `致谢`. → Run `scripts/set_styleref_header.py final.docx --header headerN.xml --style-id 1 --in-place` to replace the static text with a `STYLEREF` field that resolves to the current chapter heading. Detected by the `body-header-non-back-matter` check.
 - **Header prints `错误!使用'开始'选项卡…` or `Error! No text of specified style…`.** A `STYLEREF "Heading 1"` field references the **display name** of the heading style; on localized templates the actual style name is "heading 1" (lowercase) or "标题 1", and the field cannot resolve. → Use `STYLEREF 1` (the numeric `styleId`); `set_styleref_header.py` defaults to this. Detected by the `pdf-field-errors` check when `--pdf` is supplied.
 - **Body page numbers don't restart at 1.** The body section has no `<w:pgNumType>` and silently inherits whichever format the previous (Roman) section used. → Set `<w:pgNumType w:fmt="decimal" w:start="1"/>` on the body section's `sectPr`. For thesis templates that demand a **separate** Roman TOC section and Arabic body section, insert a section break between TOC and the first body chapter and give each its own `pgNumType`.
+- **3 figures missing from a 25-figure thesis.** Pandoc dropped them because the LaTeX `\includegraphics{name}` reference omits the extension and the basename also matches a vector file (`name.pdf` / `name.vsdx`) which pandoc cannot embed. → Either preprocess the LaTeX to add `.png` to every `\includegraphics`, or post-process the rough DOCX to insert the missing images at their caption paragraphs (`from docx import Document; new_p.add_run().add_picture(...)`). Detected by the `figure-count-vs-source` check when `--source-latex-dir` is supplied.
+- **Tables render as borderless instead of three-line.** A project pipeline forgot to call `format_three_line_tables`, or only ran `set_cell_border` through python-docx's `cell` wrappers (which silently no-op on `vMerge="continue"` cells whose wrappers collapse onto the merge-start cell above). → Call `format_three_line_tables` from `adaptive_docx_pipeline.py`, or fall back to writing `<w:tcBorders>` directly into the raw `<w:tc>` elements inside `<w:tr>`. Detected by the `table-border-style` check with `--expected-table-style three-line`.
+
+## Anti-checklist: do not stop at the user's bullet list
+
+When a user files a list of complaints (e.g. "red text / double numbering /
+reference numbers / wrong header"), treat the list as a **sample**, not as an
+exhaustive bug catalog. Before reporting completion, run an explicit
+"source vs output" content audit at minimum:
+
+1.  Count `\includegraphics` (or equivalent figure references) in the source
+    project and compare to `<w:drawing>` in the final docx.
+2.  Count `\caption` directives and compare to caption-styled paragraphs.
+3.  Count `\begin{table}` and compare to `<w:tbl>` count *with three-line
+    borders applied* if the template requires three-line tables.
+4.  Walk the contact-sheet preview PNG of the exported PDF and look at every
+    page where a body chapter starts; compare visible figure count and
+    visible table border style against the source.
+
+Concretely, do not declare success based only on a structural validator's
+`PASS`. Run the render validator with `--source-latex-dir`,
+`--expected-table-style`, and `--pdf`, and fix anything they surface.
 
 
 ## Script Guide

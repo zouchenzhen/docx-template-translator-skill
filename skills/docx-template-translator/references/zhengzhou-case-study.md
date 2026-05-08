@@ -137,6 +137,42 @@ TOC body. Add these render-level checks (all available in
   silently inherits the abstract's Roman numerals and you see
   "目录 page footer = 5 / 第1章 page footer = 8".
 
+## Content-audit gaps found after the v5 → v6 round
+
+The v5 retrofit fixed the five render-level bugs above, and the new render
+validator declared `PASS`. The user then pointed out two more failures that
+neither validator was looking for:
+
+- **3 figures missing.** `chap01.tex`'s `\includegraphics{thesis_structure}`,
+  `chap02.tex`'s `\includegraphics{q_learning_algorithm}`, and `chap03.tex`'s
+  `\includegraphics{simulation_script_framework}` all reference the basename
+  without `.png`. Pandoc resolved each basename to the vector sibling
+  (`.pdf` or `.vsdx`) and could not embed it, so all three figures dropped
+  silently. The structural validator counted what *was* embedded (20 unique
+  image rels, 24 drawings via reuse) and declared the count "fine".
+  *Mitigations:* run `validate_docx_render.py --source-latex-dir
+  zzuthesis/data` to assert source `\includegraphics` count ≤ rendered
+  `<w:drawing>` count; or pre-process the LaTeX to add `.png` to every
+  bare-basename `\includegraphics`.
+- **Three-line tables never applied.** The skill ships
+  `format_three_line_tables` in `adaptive_docx_pipeline.py` and the preset
+  carries `enable_three_line_tables: true`, but the project pipeline forgot
+  to call the function. All 20 tables ended up borderless. Even calling the
+  function once isn't enough: it iterates `table.rows[-1].cells`, and
+  python-docx's wrapper for a `vMerge="continue"` cell collapses onto the
+  merge-start cell above, so the bottom heavy line gets a gap at the
+  bottom of any column whose final cell is a vertical-merge continuation.
+  *Mitigations:* run `validate_docx_render.py
+  --expected-table-style three-line`; and when applying borders, fall back
+  to writing `<w:tcBorders>` directly into the raw `<w:tc>` elements inside
+  the last `<w:tr>` rather than relying on python-docx's cell wrappers.
+
+The takeaway: a user's bug list is a **sample**, not a catalog. The render
+validator must also model "what the source said should be in the output" —
+figure count, caption count, table count, table border style — not only "is
+the structure internally consistent". Both kinds of checks must run before
+declaring a conversion complete.
+
 ## Libraries Used
 
 - `pandoc`: rough LaTeX/Markdown to DOCX conversion.
