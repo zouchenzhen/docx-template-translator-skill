@@ -78,7 +78,9 @@ reference repair, or a body section header whose static text is "致谢". Run
 - **Table border style** (`--expected-table-style three-line` for Chinese-thesis templates, default `any`): every data table must classify as a recognizable three-line layout (top heavy, header-row bottom thin, last-row bottom heavy, vertical edges nil) or a `tblStyle` that may carry borders. A docx that contains 20 borderless tables when the template requires three-line tables is the failure mode this catches. Layout/wrapper tables (≤ `--table-min-data-rows` rows) are skipped.
 - **Citation coverage** (`--source-latex-dir <dir>` or `--min-citations <N>`): the docx must contain at least as many `<w:hyperlink w:anchor="ref_*">` elements as the source has `\cite{}` calls. Pandoc's default behavior is to render `\cite{key}` as `(Author Year)` — a *visible* author-year token but **without** an internal hyperlink. For GB/T 7714 thesis style every citation must render as numeric `[N]` superscript hyperlinking to the bibliography entry; missing this is invisible to image-count / paragraph-count validators.
 - **Caption count vs source** (`--source-latex-dir <dir>` or `--min-figure-captions <N>` / `--min-table-captions <N>`): count caption-style paragraphs (`图 X.Y` / `表 X.Y` lead, excluding inline body mentions like `图 4.4 与图 4.3 分别给出…`) and require at least the source `\begin{figure}+\caption` / `\begin{table}+\caption` env count. The pandoc rough-conversion for Chinese theses commonly drops captions onto a plain body style **without** the chapter-relative number prefix; the structural validator counts `<w:drawing>` and `<w:tbl>` but never checks whether each has a labeled caption beside it.
-- **Caption format** (default on): every paragraph that *is* a caption must have `w:jc="center"`. Centering is the first thing a thesis reviewer flags; an off-center caption immediately signals a pandoc-only conversion that did not run a caption-formatter pass.
+- **Caption numbering** (default on): every paragraph that *looks* like a caption attempt — i.e. starts with `图`/`表`/`Figure`/`Table` followed by a digit — must match the strict form `图 X.Y  说明文字` / `表 X.Y  说明文字` (with non-empty trailing description). The candidate filter must require a digit after the heading character so body sentences like `表格型 Q-learning…` or `表中的实验配置…` are not mistaken for captions. Inline body mentions like `图 4.4 与图 4.3 分别给出…` are skipped via a verb-list pattern.
+- **Caption centering** (default on): every recognized caption paragraph must have `w:jc="center"`. Off-center captions are the first thing a thesis reviewer flags and signal a pandoc-only conversion that did not run a caption-formatter pass.
+- **Caption untagged near figure/table** (default on): every body `<w:drawing>` paragraph must be followed (within one step, after collapsing adjacent drawing paragraphs into a single subfigure group) by a caption-pattern paragraph, and every data `<w:tbl>` (≥2 rows, ≥2 cells in the header row) must be preceded by one. Front-matter drawings before the first body Heading 1 (cover-page logos, school crests, declaration page emblems) are excluded — they are not captioned figures. This catches pandoc-converted figures whose caption was emitted as a plain body paragraph without the `X.Y` prefix.
 
 Demote any single check to a warning with `--allow <check-name>` when a project intentionally omits a TOC, intentionally shares a counter, etc.
 
@@ -116,9 +118,46 @@ or rule fixes it.
 - **3 figures missing from a 25-figure thesis.** Pandoc dropped them because the LaTeX `\includegraphics{name}` reference omits the extension and the basename also matches a vector file (`name.pdf` / `name.vsdx`) which pandoc cannot embed. → Either preprocess the LaTeX to add `.png` to every `\includegraphics`, or post-process the rough DOCX to insert the missing images at their caption paragraphs (`from docx import Document; new_p.add_run().add_picture(...)`). Detected by the `figure-count-vs-source` check when `--source-latex-dir` is supplied.
 - **Tables render as borderless instead of three-line.** A project pipeline forgot to call `format_three_line_tables`, or only ran `set_cell_border` through python-docx's `cell` wrappers (which silently no-op on `vMerge="continue"` cells whose wrappers collapse onto the merge-start cell above). → Call `format_three_line_tables` from `adaptive_docx_pipeline.py`, or fall back to writing `<w:tcBorders>` directly into the raw `<w:tc>` elements inside `<w:tr>`. Detected by the `table-border-style` check with `--expected-table-style three-line`.
 - **Citations rendered as `(Author Year)` instead of GB/T-7714 `[N]` superscript.** Pandoc with default `--citeproc` (or no citeproc at all when the source uses `\cite`) emits `(Zhu et al. 2025)`-style author-year tokens — visible but **not** a Word hyperlink and **not** the numeric format Chinese thesis templates require. The structural validator counts paragraphs and reference bookmarks; it does not see that the in-text mark format is wrong. → After pandoc, parse `main.bbl` for `\bibitem{key}` order to build a `cite_key → number` map and a per-key `(first_surname, year)` token; walk every paragraph in `document.xml` looking for `(Author Year[; Author Year]*)` patterns; replace each with `[N1, N2]` wrapped in `<w:hyperlink w:anchor="ref_N">` runs that carry `<w:vertAlign w:val="superscript"/>`. **Disambiguate same-(surname,year) collisions** (e.g. two `Lozano-Cuadra 2024` or two `Lu 2025` entries) by combining the bbl opt's secondary author list **and** the first author's initial from the bbl author line — pandoc emits `(W. Lu et al. 2025)` vs `(J. Lu et al. 2025)` exactly to disambiguate. Use word-boundary `\b<initial>\b` matching so single letters do not accidentally match inside `et al.`. Detected by the `citation-coverage` check.
-- **Captions missing the `图 X.Y` / `表 X.Y` number prefix and not centered.** Pandoc maps `\caption{}` to a plain body style without the chapter-relative number; `\begin{figure}` / `\begin{table}` envs that contain no embeddable visual (e.g. complex multirow tables) are dropped entirely, taking their captions with them. → Walk the docx body, advance a chapter counter on every body H1, count drawings (collapsing adjacent drawing paragraphs into one figure-group) and data `<w:tbl>` elements per chapter, and insert a centered caption paragraph after each figure-group / before each table. Source captions for the text content come from re-parsing each chapter's `.tex` for `\begin{figure}…\caption{…}` and `\begin{table}…\caption{…}` envs in document order. If pandoc dropped a table entirely, the missing caption surfaces as a `caption-count-vs-source` FAIL — re-render the lost `<w:tbl>` from `\begin{tabular}` separately rather than masking the gap.
+- **Captions missing the `图 X.Y` / `表 X.Y` number prefix and not centered.** Pandoc maps `\caption{}` to a plain body style without the chapter-relative number; `\begin{figure}` / `\begin{table}` envs that contain no embeddable visual (e.g. complex multirow tables) are dropped entirely, taking their captions with them. → Walk the docx body, advance a chapter counter on every body H1, count drawings (collapsing adjacent drawing paragraphs into one figure-group) and data `<w:tbl>` elements per chapter, and insert a centered caption paragraph after each figure-group / before each table. Source captions for the text content come from re-parsing each chapter's `.tex` for `\begin{figure}…\caption{…}` and `\begin{table}…\caption{…}` envs in document order. If pandoc dropped a table entirely, the missing caption surfaces as a `caption-count-vs-source` FAIL — re-render the lost `<w:tbl>` from `\begin{tabular}` separately rather than masking the gap. The three render-check pieces (`caption-numbering`, `caption-centering`, `caption-untagged-near-figure-table`) each enforce a different invariant; do not collapse them into one "caption format" check, because each can hide the others (e.g. centering everything that *happens to be* a numbered caption is meaningless if the numbering itself is missing on half the captions).
 
-## Anti-checklist: do not stop at the user's bullet list
+## Validator-authoring discipline
+
+When you add or change a check inside `validate_docx_render.py` (or any
+text-pattern rule that disambiguates between candidates), follow these two
+rules. Both come from real regressions on this skill.
+
+1.  **Translate every user-visible requirement into its own enforcement, not
+    just its own detection.** When the template demands "captions must be
+    `图 X.Y 说明` AND centered", that is *two* requirements. A single
+    `check_caption_format` that filters paragraphs to "those already
+    matching `图 X.Y …`" and then checks `w:jc=center` only enforces the
+    centering half — captions that lost the `图 X.Y` prefix are silently
+    dropped from the candidate set and never reported. Split such checks
+    into one per requirement (in this skill: `caption-numbering`,
+    `caption-centering`, `caption-untagged-near-figure-table`) and make sure
+    the candidate filter for each does not depend on the other requirements
+    being met. The candidate filter for the "numbering" check must accept
+    paragraphs whose lead is `图`/`表` *with a digit follow* (so body
+    sentences like `表格型 Q-learning…` or `表中的实验配置…` are excluded
+    by the `\d` requirement, not by accidentally matching the numbering
+    pattern).
+
+2.  **Disambiguation rules need a unit test before commit.** When a citation
+    or anchor disambiguator picks one of N candidates by a heuristic
+    ("with `et al.` → the one with more secondary authors"), write the
+    minimal unit test first:
+    `assert disambig("(Lozano-Cuadra et al. 2024)") == "lozano2024"`. The
+    fall-back direction (`keys_sorted[0]` vs `keys_sorted[-1]`) is
+    coin-flip easy to write backwards from the comment, and the only
+    cheap way to catch the inversion is a fixture-driven test, not code
+    review. For the GB/T 7714 citation rewriter specifically: when two
+    bbl entries share `(surname, year)` and both carry `et al.`, prefer
+    the one whose secondary-author set or first-author initial matches
+    the rendered author-year token; use word-boundary `\b<initial>\b`
+    matching so a single-letter initial does not accidentally match
+    inside `et al.` itself.
+
+
 
 When a user files a list of complaints (e.g. "red text / double numbering /
 reference numbers / wrong header"), treat the list as a **sample**, not as an
@@ -145,7 +184,7 @@ Concretely, do not declare success based only on a structural validator's
 - `scripts/adaptive_docx_pipeline.py`: reusable starter pipeline for template-based reconstruction. It is a code base to copy and patch, not a final institutional-template converter. Behavior is config-driven (`--config`). It remaps copied DOCX style IDs by visible style name by default, provides run-preserving replacement helpers for protected regions, and can scope formatting with `formatting_start_marker` / `formatting_end_marker`. Optional config keys include `clear_header_references`, `clear_footer_references`, and `heading_1_page_breaks`. Three-line tables and other Chinese-thesis-specific tweaks are opt-in.
 - `scripts/finalize_word_docx.py`: updates Word fields/TOC and optionally exports PDF through Word COM. Disables macros for safety, bootstraps missing Windows environment variables, and falls back through `EnsureDispatch`, `DispatchEx`, and `Dispatch`; use `--prefer-dispatch-ex` when an existing Word instance is unreliable.
 - `scripts/validate_docx_conversion.py`: structural QA for common failures, including template placeholders, body/back-matter ordering, heading-style preservation, inherited section headers, image/table counts, and protected front-matter format drift against the original template.
-- `scripts/validate_docx_render.py`: render-level QA that complements the structural validator. Six checks (TOC field, numbering consistency, multilevel heading format, reference-counter independence, body-header literal, PDF field-error strings); each can be demoted with `--allow`. Run after Word COM finalization.
+- `scripts/validate_docx_render.py`: render-level QA that complements the structural validator. Twelve checks (TOC field, numbering consistency, multilevel heading format, reference-counter independence, body-header literal, figure-count-vs-source, table-border-style, citation-coverage, caption-count-vs-source, caption-numbering, caption-centering, caption-untagged-near-figure-table) plus the `pdf-field-errors` check when `--pdf` is supplied; each can be demoted with `--allow`. Run after Word COM finalization.
 - `scripts/inject_toc_field.py`: idempotently insert a `{ TOC \o "1-3" \h \z \u }` field after the 目录 / Contents / Table of Contents heading. Use when a rough conversion produced a TOC heading without a TOC field. Word's "update fields" cannot populate a TOC that isn't there.
 - `scripts/set_styleref_header.py`: rewrite a single `headerN.xml` so its first paragraph contains a `STYLEREF <styleId> \* MERGEFORMAT` field that resolves to the current chapter title. Use `--style-id 1` (numeric form) for portability — the display-name form fails on localized templates and prints `错误!使用'开始'选项卡…` in the rendered header.
 - `scripts/render_pdf_preview.py`: renders selected PDF pages into contact sheets for visual QA.

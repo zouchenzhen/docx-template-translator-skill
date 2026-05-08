@@ -116,7 +116,9 @@ CHECK_NAMES = (
     "table-border-style",
     "citation-coverage",
     "caption-count-vs-source",
-    "caption-format",
+    "caption-numbering",
+    "caption-centering",
+    "caption-untagged-near-figure-table",
 )
 
 DEFAULT_CHAPTER_PREFIX_PATTERN = r"(第\s*%1\s*章|Chapter\s+%1)"
@@ -826,16 +828,52 @@ def check_caption_count_vs_source(
     }
 
 
-def check_caption_format(document_xml: str) -> dict:
-    """Each caption paragraph (matching '图 X.Y' or '表 X.Y' pattern, excluding
-    inline mentions) must have w:jc=center. Centering is the GB/T 7714
-    visual requirement; missing center is the most common defect after a
-    pandoc-only conversion that maps captions to a plain body style.
+def check_caption_numbering(document_xml: str) -> dict:
+    """Every caption-bearing paragraph must match the strict numbering form
+    '图 X.Y  说明文字' / '表 X.Y  说明文字' (or 'Figure N.M' / 'Table N.M' for
+    English templates) with non-empty trailing description text.
+
+    A paragraph that *looks* like a caption attempt but lacks the numeric
+    N.M pair, or whose number prefix is followed by an empty description,
+    fails this check. We only consider a paragraph a candidate when it begins
+    with '图/表/Figure/Table' AND the next non-space char is a digit — body
+    sentences like '表格型 Q-learning ...' or '表中的实验配置 ...' must NOT
+    be treated as captions just because they happen to start with 表/图.
     """
+    paras = re.findall(r"<w:p\b[^>]*>.*?</w:p>", document_xml, flags=re.S)
+    # Candidate: '图/表/Figure/Table' + optional whitespace + a digit (any digit).
+    # This excludes body words '表格', '表中', '图示', '图谱', etc.
+    weak_pat = re.compile(r"^\s*(图|表|Figure|Fig\.?|Table|Tab\.?)\s*[\d一二三四五六七八九十]")
+    strict_pat = re.compile(r"^\s*(图|表|Figure|Fig\.?|Table|Tab\.?)\s*\d+[.\-]\d+\s*\S+")
+    failures = []
+    total_attempted = 0
+    for p in paras:
+        txt = "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", p)).strip()
+        if not txt:
+            continue
+        if not weak_pat.match(txt):
+            continue
+        # Skip inline body mentions like '图 4.4 与图 4.3 分别给出...'
+        if _CAPTION_INLINE_MENTION_PAT.match(txt):
+            continue
+        total_attempted += 1
+        if not strict_pat.match(txt):
+            failures.append({"reason": "caption paragraph missing 'X.Y  说明文字' format", "head": txt[:60]})
+    return {
+        "name": "caption-numbering",
+        "passed": not failures,
+        "candidate_caption_paragraphs": total_attempted,
+        "failures": failures,
+        "failures_sample": failures[:5],
+    }
+
+
+def check_caption_centering(document_xml: str) -> dict:
+    """Every paragraph already recognized as a caption must have w:jc=center."""
     caps = _scan_docx_caption_paragraphs(document_xml)
     not_centered = [c for c in caps if (c.get("jc") or "").lower() != "center"]
     return {
-        "name": "caption-format",
+        "name": "caption-centering",
         "passed": not not_centered,
         "total_caption_paragraphs": len(caps),
         "not_centered_count": len(not_centered),
@@ -845,6 +883,78 @@ def check_caption_format(document_xml: str) -> dict:
             if not not_centered
             else [{"reason": "caption paragraph(s) without w:jc=center", "count": len(not_centered)}]
         ),
+    }
+
+
+def check_caption_untagged_near_figure_table(document_xml: str) -> dict:
+    """Every body <w:drawing> paragraph should be followed by a caption-pattern
+    paragraph (within 1 step), and every data <w:tbl> should be preceded by
+    one. A paragraph in that slot whose text does not start with the
+    figure/table caption pattern is a missing or untagged caption — common
+    when pandoc maps \\caption{} text to a plain body style without the
+    'X.Y' prefix and the project pipeline forgets to repair it.
+
+    Front-matter scope: cover-page logos, school-crest images, and other
+    drawings that appear *before* the first body Heading 1 are not
+    figures-with-captions and are excluded from this check.
+    """
+    paras_and_tbls = re.findall(r"<w:p\b[^>]*>.*?</w:p>|<w:tbl>.*?</w:tbl>", document_xml, flags=re.S)
+    is_drawing = lambda x: x.startswith("<w:p") and "<w:drawing" in x
+    is_tbl = lambda x: x.startswith("<w:tbl>")
+    is_caption = lambda x: x.startswith("<w:p") and bool(_CAPTION_FIG_PAT.match("".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", x)).strip()) or _CAPTION_TAB_PAT.match("".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", x)).strip())) and not _CAPTION_INLINE_MENTION_PAT.match("".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", x)).strip())
+    # Locate the first body Heading-1-style paragraph; treat everything before
+    # it as front-matter (cover/abstract/declaration). We accept either the
+    # localized pStyle name (Heading1 / 1 / 标题 1) or a numPr binding.
+    body_start = 0
+    for idx, x in enumerate(paras_and_tbls):
+        if not x.startswith("<w:p"):
+            continue
+        sid_m = re.search(r"<w:pStyle w:val=\"([^\"]+)\"", x)
+        sid = sid_m.group(1) if sid_m else ""
+        # Heuristic: chapter-level heading style ids in the school template.
+        if sid in {"1", "Heading1", "a3", "Heading10", "1Char"} or "标题1" in sid or "Heading1" in sid:
+            body_start = idx
+            break
+    failures = []
+    for i, x in enumerate(paras_and_tbls):
+        if i < body_start:
+            continue
+        if is_drawing(x):
+            # Look ahead: skip over any subsequent drawing paragraphs (subfigure
+            # group). After the last drawing in the group, the next non-drawing
+            # paragraph must be a caption.
+            j = i + 1
+            while j < len(paras_and_tbls) and is_drawing(paras_and_tbls[j]):
+                j += 1
+            if j >= len(paras_and_tbls) or not is_caption(paras_and_tbls[j]):
+                failures.append({
+                    "kind": "drawing-without-following-caption",
+                    "drawing_index": i,
+                })
+        if is_tbl(x):
+            # Skip layout wrappers (single-row, ≤2 cells)
+            rows = re.findall(r"<w:tr\b[^>]*>.*?</w:tr>", x, flags=re.S)
+            if len(rows) < 2:
+                continue
+            first_cells = re.findall(r"<w:tc\b[^>]*>", rows[0])
+            if len(first_cells) < 2:
+                continue
+            # Scan backwards for the nearest caption paragraph
+            k = i - 1
+            while k >= 0 and paras_and_tbls[k].startswith("<w:p") and not "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", paras_and_tbls[k])).strip():
+                k -= 1
+            if k < 0 or not is_caption(paras_and_tbls[k]):
+                failures.append({
+                    "kind": "table-without-preceding-caption",
+                    "table_index": i,
+                })
+    return {
+        "name": "caption-untagged-near-figure-table",
+        "passed": not failures,
+        "front_matter_skipped_until_index": body_start,
+        "failures_count": len(failures),
+        "failures_sample": failures[:5],
+        "failures": failures,
     }
 
 
@@ -922,7 +1032,9 @@ def main() -> int:
                 args.min_figure_captions,
                 args.min_table_captions,
             ),
-            check_caption_format(document_xml),
+            check_caption_numbering(document_xml),
+            check_caption_centering(document_xml),
+            check_caption_untagged_near_figure_table(document_xml),
         ]
         if args.pdf:
             results.append(check_pdf_field_errors(Path(args.pdf)))
