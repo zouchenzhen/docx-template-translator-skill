@@ -114,6 +114,9 @@ CHECK_NAMES = (
     "body-header-non-back-matter",
     "figure-count-vs-source",
     "table-border-style",
+    "citation-coverage",
+    "caption-count-vs-source",
+    "caption-format",
 )
 
 DEFAULT_CHAPTER_PREFIX_PATTERN = r"(第\s*%1\s*章|Chapter\s+%1)"
@@ -660,6 +663,191 @@ def check_table_border_style(
     return {"name": "table-border-style", "expected_style": expected_style, "summary": summary, "passed": not failures, "failures": failures}
 
 
+def _count_cites_in_source(source_dir: Path) -> int:
+    pat = re.compile(r"\\cite[pt]?\*?(?:\[[^\]]*\])?\{([^}]+)\}")
+    n = 0
+    for tex in source_dir.rglob("*.tex"):
+        if tex.name in {"resume.tex", "review.tex"}:
+            continue
+        try:
+            text = tex.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if line.lstrip().startswith("%"):
+                continue
+            n += len(pat.findall(line))
+    return n
+
+
+def check_citation_coverage(
+    document_xml: str,
+    source_latex_dir: Path | None,
+    explicit_min_cites: int | None,
+) -> dict:
+    """Compare source \\cite count to docx hyperlinks pointing at ref_* / bib_* /
+    cite_* anchors. Pandoc emitted as inline (Author Year) WITHOUT hyperlink is
+    the failure mode we want to catch — the rendered text looks like a
+    citation but Word/PDF cannot navigate to the bibliography entry, and the
+    GB/T 7714 numeric format is missing.
+    """
+    anchors = re.findall(r'<w:hyperlink[^>]*w:anchor="([^"]+)"', document_xml)
+    cite_anchors = [a for a in anchors if re.match(r"(ref|bib|cite|biblio)[_\-]?\d+", a, re.I)]
+    n_hl = len(cite_anchors)
+    n_unique_anchors = len(set(cite_anchors))
+    expected = explicit_min_cites
+    source_count = None
+    if source_latex_dir is not None and source_latex_dir.is_dir():
+        source_count = _count_cites_in_source(source_latex_dir)
+        if expected is None:
+            expected = source_count
+    if expected is None:
+        return {
+            "name": "citation-coverage",
+            "passed": True,
+            "evidence": "no --source-latex-dir or --min-citations supplied — skipped",
+            "ref_hyperlinks": n_hl,
+            "unique_ref_anchors": n_unique_anchors,
+        }
+    return {
+        "name": "citation-coverage",
+        "passed": n_hl >= expected,
+        "ref_hyperlinks": n_hl,
+        "unique_ref_anchors": n_unique_anchors,
+        "source_cite_count": source_count,
+        "expected_min": expected,
+        "failures": (
+            []
+            if n_hl >= expected
+            else [{
+                "reason": "in-text citation hyperlinks fewer than source \\cite count; pandoc may have emitted (Author Year) tokens without internal hyperlinks. For GB/T 7714 thesis style, every \\cite must render as a numeric superscript [N] hyperlink to ref_N.",
+                "ref_hyperlinks": n_hl,
+                "expected_min": expected,
+            }]
+        ),
+    }
+
+
+def _count_caption_envs_in_source(source_dir: Path) -> tuple[int, int]:
+    fig_count = 0
+    tab_count = 0
+    fig_pat = re.compile(r"\\begin\{figure\*?\}(.*?)\\end\{figure\*?\}", re.S)
+    tab_pat = re.compile(r"\\begin\{table\*?\}(.*?)\\end\{table\*?\}", re.S)
+    cap_pat = re.compile(r"\\caption\{")
+    for tex in source_dir.rglob("*.tex"):
+        if tex.name in {"resume.tex", "review.tex"}:
+            continue
+        try:
+            text = tex.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for m in fig_pat.finditer(text):
+            if cap_pat.search(m.group(1)):
+                fig_count += 1
+        for m in tab_pat.finditer(text):
+            if cap_pat.search(m.group(1)):
+                tab_count += 1
+    return fig_count, tab_count
+
+
+_CAPTION_FIG_PAT = re.compile(r"^\s*(图|Figure|Fig\.?)\s*[\d一二三四五六七八九十]+[.\-][\d一二三四五六七八九十]+")
+_CAPTION_TAB_PAT = re.compile(r"^\s*(表|Table|Tab\.?)\s*[\d一二三四五六七八九十]+[.\-][\d一二三四五六七八九十]+")
+_CAPTION_INLINE_MENTION_PAT = re.compile(r"^\s*(图|表|Figure|Table|Fig\.?|Tab\.?)\s*[\d一二三四五六七八九十]+[.\-][\d一二三四五六七八九十]+\s*(与|和|及|或|对应|展示|显示|表明|表示|说明|描述|给出)")
+
+
+def _scan_docx_caption_paragraphs(document_xml: str) -> list[dict]:
+    paras = re.findall(r"<w:p\b[^>]*>.*?</w:p>", document_xml, flags=re.S)
+    out = []
+    for p in paras:
+        txt = "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", p)).strip()
+        if not txt:
+            continue
+        is_fig = bool(_CAPTION_FIG_PAT.match(txt))
+        is_tab = bool(_CAPTION_TAB_PAT.match(txt))
+        if not (is_fig or is_tab):
+            continue
+        # Inline mention like '图 4.4 与图 4.3 分别给出...' should not count.
+        if _CAPTION_INLINE_MENTION_PAT.match(txt):
+            continue
+        jc = re.search(r'<w:jc w:val="([^"]+)"', p)
+        out.append({
+            "kind": "figure" if is_fig else "table",
+            "jc": jc.group(1) if jc else None,
+            "head": txt[:60],
+        })
+    return out
+
+
+def check_caption_count_vs_source(
+    document_xml: str,
+    source_latex_dir: Path | None,
+    expected_min_figures: int | None,
+    expected_min_tables: int | None,
+) -> dict:
+    """Compare source figure/table caption envs to docx caption paragraphs."""
+    caps = _scan_docx_caption_paragraphs(document_xml)
+    fig_caps = [c for c in caps if c["kind"] == "figure"]
+    tab_caps = [c for c in caps if c["kind"] == "table"]
+    if source_latex_dir is not None and source_latex_dir.is_dir():
+        sf, st = _count_caption_envs_in_source(source_latex_dir)
+        if expected_min_figures is None:
+            expected_min_figures = sf
+        if expected_min_tables is None:
+            expected_min_tables = st
+    if expected_min_figures is None and expected_min_tables is None:
+        return {
+            "name": "caption-count-vs-source",
+            "passed": True,
+            "evidence": "no --source-latex-dir / --min-figure-captions / --min-table-captions — skipped",
+            "docx_figure_captions": len(fig_caps),
+            "docx_table_captions": len(tab_caps),
+        }
+    failures = []
+    if expected_min_figures is not None and len(fig_caps) < expected_min_figures:
+        failures.append({
+            "reason": "fewer figure caption paragraphs than source \\begin{figure} envs with \\caption",
+            "docx_count": len(fig_caps),
+            "expected_min": expected_min_figures,
+        })
+    if expected_min_tables is not None and len(tab_caps) < expected_min_tables:
+        failures.append({
+            "reason": "fewer table caption paragraphs than source \\begin{table} envs with \\caption",
+            "docx_count": len(tab_caps),
+            "expected_min": expected_min_tables,
+        })
+    return {
+        "name": "caption-count-vs-source",
+        "passed": not failures,
+        "docx_figure_captions": len(fig_caps),
+        "docx_table_captions": len(tab_caps),
+        "expected_figure_min": expected_min_figures,
+        "expected_table_min": expected_min_tables,
+        "failures": failures,
+    }
+
+
+def check_caption_format(document_xml: str) -> dict:
+    """Each caption paragraph (matching '图 X.Y' or '表 X.Y' pattern, excluding
+    inline mentions) must have w:jc=center. Centering is the GB/T 7714
+    visual requirement; missing center is the most common defect after a
+    pandoc-only conversion that maps captions to a plain body style.
+    """
+    caps = _scan_docx_caption_paragraphs(document_xml)
+    not_centered = [c for c in caps if (c.get("jc") or "").lower() != "center"]
+    return {
+        "name": "caption-format",
+        "passed": not not_centered,
+        "total_caption_paragraphs": len(caps),
+        "not_centered_count": len(not_centered),
+        "not_centered_sample": not_centered[:5],
+        "failures": (
+            []
+            if not not_centered
+            else [{"reason": "caption paragraph(s) without w:jc=center", "count": len(not_centered)}]
+        ),
+    }
+
+
 # ---- main ----
 
 def main() -> int:
@@ -682,6 +870,12 @@ def main() -> int:
                         help="Required table border style. Default 'any' = no enforcement.")
     parser.add_argument("--table-min-data-rows", type=int, default=2,
                         help="Tables with fewer rows are skipped as layout/wrapper.")
+    parser.add_argument("--min-citations", type=int, default=None,
+                        help="Explicit lower bound for cite hyperlinks. Used when --source-latex-dir not given.")
+    parser.add_argument("--min-figure-captions", type=int, default=None,
+                        help="Explicit lower bound for figure caption paragraphs. Used when --source-latex-dir not given.")
+    parser.add_argument("--min-table-captions", type=int, default=None,
+                        help="Explicit lower bound for table caption paragraphs. Used when --source-latex-dir not given.")
     args = parser.parse_args()
 
     docx_path = Path(args.docx)
@@ -717,6 +911,18 @@ def main() -> int:
                 expected_style=args.expected_table_style,
                 min_data_rows=args.table_min_data_rows,
             ),
+            check_citation_coverage(
+                document_xml,
+                Path(args.source_latex_dir) if args.source_latex_dir else None,
+                args.min_citations,
+            ),
+            check_caption_count_vs_source(
+                document_xml,
+                Path(args.source_latex_dir) if args.source_latex_dir else None,
+                args.min_figure_captions,
+                args.min_table_captions,
+            ),
+            check_caption_format(document_xml),
         ]
         if args.pdf:
             results.append(check_pdf_field_errors(Path(args.pdf)))

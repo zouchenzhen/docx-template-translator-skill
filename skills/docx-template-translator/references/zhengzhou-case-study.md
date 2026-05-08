@@ -173,6 +173,55 @@ figure count, caption count, table count, table border style — not only "is
 the structure internally consistent". Both kinds of checks must run before
 declaring a conversion complete.
 
+## Citation + caption gaps found after the v6 → v7 round
+
+After v6 fixed the figure / three-line problems, the user surfaced two more
+defects that *all* validators (structural + the v6 render validator) had
+declared PASS on:
+
+- **Citations rendered as `(Author Year)`, not GB/T-7714 `[N]` superscript.**
+  Pandoc's default cite-rendering produces tokens like `(Zhu et al. 2025)` /
+  `(Han et al. 2024; Zhu et al. 2025)`. They are **visible**, so a paragraph
+  count or reference-bookmark count cannot tell anything is wrong. The thesis
+  shipped with 33 ref bookmarks (`ref_1`…`ref_33`) but only 10 in-text
+  `<w:hyperlink w:anchor="ref_*">` and **0** `<w:vertAlign w:val="superscript">`
+  runs. *Mitigations:* (1) parse `main.bbl` for the `\bibitem{key}` order
+  (== bibliography number) and the bracketed opt's `(first_surname, year)`;
+  (2) walk every body paragraph in `document.xml` for `(...)` cite tokens;
+  (3) split multi-cite tokens by `;`, resolve each to a cite_key (handle
+  collisions like two `lozano-cuadra 2024` entries by matching the bbl opt's
+  secondary author list against the docx token text); (4) replace the
+  original parenthetical text with `[N1, N2]` wrapped as
+  `<w:hyperlink w:anchor="ref_N">…<w:vertAlign w:val="superscript"/>` runs.
+  Detected by the new `citation-coverage` check (`--source-latex-dir`).
+- **Figure / table captions missing chapter-relative numbers and not
+  centered.** Pandoc's caption handling for Chinese theses dropped most
+  captions onto a plain body style without the `图 X.Y` / `表 X.Y` prefix;
+  some captions disappeared entirely along with their `\begin{table}` env
+  when the table was too complex for pandoc to render as `<w:tbl>`. The v6
+  thesis ended up with 5 caption paragraphs total (out of 30 source caption
+  envs), 0 of them centered. *Mitigations:* walk the docx body chapter by
+  chapter, group adjacent `<w:drawing>` paragraphs as a single figure
+  (subfigure pattern), assign `图 chap.idx_in_chap` / `表 chap.idx_in_chap`
+  numbers, pull caption text from `\begin{figure}…\caption{…}` /
+  `\begin{table}…\caption{…}` in source `chapNN.tex` in document order, and
+  insert a centered caption paragraph after each figure-group / before each
+  table. Detected by the new `caption-count-vs-source` and `caption-format`
+  checks. Captions whose source `\begin{table}` env was dropped by pandoc
+  remain a `caption-count-vs-source` FAIL — those tables must be rebuilt
+  from `\begin{tabular}` separately, not masked by inserting an empty
+  caption.
+
+The pattern repeating across v4 / v5 / v6 / v7 rounds: every iteration the
+validator catches everything *the validator looks for*, the user spots
+something *new*, the new failure becomes a new validator check, and the
+checklist grows. Each round of "STATUS: PASS" was honest within its own
+scope; what was missing was a piece of the model — what the source said the
+output should contain. Citations and captions are the two largest categories
+of "source declares it, validator never asked, pandoc dropped it" — fixing
+the validator gap is what makes future runs catch the same defect without
+another reviewer round.
+
 ## Libraries Used
 
 - `pandoc`: rough LaTeX/Markdown to DOCX conversion.
