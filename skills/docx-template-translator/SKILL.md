@@ -42,6 +42,7 @@ Do not treat the bundled starter pipeline or a preset JSON file as a finished co
    - Use `scripts/finalize_word_docx.py` to update fields/TOC and export a PDF preview.
 6. Automated and visual verification:
    - Use `scripts/validate_docx_conversion.py final.docx --template template.docx --protected-until "中 文 摘 要" --pdf final.pdf --out validation.json` for placeholder/order/header/image/table checks plus protected-front-matter format checks. Choose the real first generated marker for non-Zhengzhou templates.
+   - Then run `scripts/validate_docx_render.py final.docx --pdf final.pdf --out validation_render.json` for render-level checks: TOC field presence, numId↔abstractNum consistency, multilevel heading format, reference-counter independence, body-header static-text leakage, and PDF field-error strings. The structural validator can return PASS while the document is visibly broken; the render validator is what catches "empty TOC", "chapters not auto-numbered", "references start at [47]", "body header still says 致谢", and "STYLEREF prints 错误!使用'开始'选项卡…".
    - Use `scripts/render_pdf_preview.py` to inspect cover pages, abstracts, TOC, representative tables, figures, formulas, and references.
 
 ## Mandatory Quality Gate
@@ -58,6 +59,24 @@ Before reporting success, run an automated and visual QA pass. If any check fail
 - Confirm representative images, formulas, tables, captions, references, and citations survive the reconstruction.
 - Record failures in the run report with PASS/FAIL/PARTIAL wording and concrete evidence.
 
+## Render-level Quality Gate (`validate_docx_render.py`)
+
+The structural quality gate above checks **counts and presence**. It can return
+`PASS` while the rendered Word/PDF is visibly broken because pandoc-derived
+DOCX bodies often ship with a TOC paragraph that has no field, a Heading 1
+style with no `<w:numPr>`, a `numId` rebound to a single-level abstract during
+reference repair, or a body section header whose static text is "致谢". Run
+`validate_docx_render.py` after `validate_docx_conversion.py` to catch those:
+
+- **TOC field presence**: `<w:fldChar w:fldCharType="begin">` plus `<w:instrText> TOC `. If absent, Word's "update fields" cannot populate a non-existent TOC. Use `scripts/inject_toc_field.py` to add one before finalization.
+- **numId ↔ abstractNum consistency**: every `(numId, ilvl)` pair used by a paragraph or by a style's `<w:numPr>` must resolve to a defined `<w:lvl ilvl=N>` inside the bound abstract numbering. Missing levels silently fall back to level 0 — that is how `1.1` / `1.1.1` headings collapse to `[1]` after a reference repair re-points `numId=1` at a single-level abstract.
+- **Multilevel heading format**: the abstract numbering bound to Heading 1 (whether at style level or via inline numPr on body H1 paragraphs) must have `lvlText` matching the user-supplied chapter prefix pattern (default `第%1章` or `Chapter %1`) at level 0 and a multilevel pattern (default contains both `%1` and `%2`) at levels 1/2. Configure with `--chapter-prefix-pattern` and `--multilevel-pattern` for non-default templates.
+- **Reference counter independence**: any non-heading paragraph appearing after the last `参考文献` / `References` Heading 1 must not reuse a `numId` already used by Heading 1/2/3. This is the bug where 33 references render as `[47]`–`[79]` because their counter was shared with H2/H3 paragraphs upstream.
+- **Body header is not a back-matter literal**: for every body section that uses a `<w:headerReference>`, the referenced `headerN.xml` must either contain a Word field (`<w:fldChar>`) or its static text must not equal `致谢` / `Acknowledgements` / `参考文献` / `附录` / `攻读学位期间…`. The recommended fix is `scripts/set_styleref_header.py --style-id 1` so the header dynamically shows the current chapter title.
+- **PDF field errors absent**: scan the exported PDF for the localized field-error strings (`错误!`, `Error!`, `!Reference source not found`, `!未找到引用源`). These appear when STYLEREF/PAGEREF/REF can't resolve their target and are an immediate FAIL.
+
+Demote any single check to a warning with `--allow <check-name>` when a project intentionally omits a TOC, intentionally shares a counter, etc.
+
 ## Required Engineering Rules
 
 - Prefer deterministic Python and OOXML operations over manual Word edits.
@@ -70,17 +89,35 @@ Before reporting success, run an automated and visual QA pass. If any check fail
 - For LaTeX, extract structured information from `.tex`, `.aux`, `.bbl`, `.toc`, and source captions when pandoc loses numbering or labels.
 - For equations, preserve pandoc-generated OMML when possible; avoid touching paragraphs containing `m:oMath` unless necessary.
 - For hyperlinks, explicitly set black/no-underline styling if the target template requires print-style links.
-- For references, add bookmarks at bibliography entries before converting in-text numeric citations into internal hyperlinks.
+- For references, add bookmarks at bibliography entries before converting in-text numeric citations into internal hyperlinks. **Allocate a fresh `numId` (and a matching `<w:abstractNum>` with level 0 = `[%1]`) for the reference list — do not reuse the heading `numId`. Sharing the counter is what produces "33 references rendered as `[47]…[79]`" because the counter accumulates through every Heading 2/3 paragraph upstream.**
 - For institutional templates, avoid generic style names like `Body Text`; inspect the template because those names may be repurposed.
 - For finalization, always run with macros disabled. The bundled `finalize_word_docx.py` sets `Word.Application.AutomationSecurity = msoAutomationSecurityForceDisable` before opening the document; do not loosen this for inputs of unknown provenance.
 - Three-line table coercion is opt-in (`--three-line-tables` or `enable_three_line_tables` in config). Don't enable it unless the target template actually requires that layout.
+
+## Common Pitfalls (with concrete fixes)
+
+These are recurring failures observed when running this skill on real
+institutional templates. Each line names what to look for and which script
+or rule fixes it.
+
+- **Empty TOC paragraph.** The rough body has a "目录 / Table of Contents" heading but no `<w:fldChar>` field after it. Word's "update fields" pass does nothing. → Run `scripts/inject_toc_field.py final.docx --in-place` before finalization, or detect via the `toc-field` check in `validate_docx_render.py`.
+- **Chapters do not auto-number.** The Heading 1 style has no `<w:numPr>` and the body H1 paragraphs also have no inline `numPr`. → Either add `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="N"/></w:numPr>` to the Heading 1 style, or insert paragraph-level `numPr` on every body H1 (skip the unnumbered front/back-matter titles like 摘要/ABSTRACT/参考文献/附录/致谢/攻读…). Detected by the `multilevel-headings` check.
+- **Section numbers render as `[1]`, not `1.1` / `1.1.1`.** A reference repair re-pointed `numId=1` at a single-level abstract list. Heading 2/3 paragraphs use `(numId=1, ilvl=1/2)` and fall back to level 0 = `[%1]`. → Restore the multilevel binding (the abstractNum whose level 0 is `第%1章` and level 1/2 contain `%1.%2` / `%1.%2.%3`) and assign references their **own** `numId`. Detected by the `numbering-consistency` check.
+- **References start at `[47]` instead of `[1]`.** The reference list shares `numId=1` with body Heading 2/3 paragraphs, so the counter has already advanced through 46 sections before it reaches `[1]`. → Allocate a fresh `numId` for the reference list. Detected by the `ref-counter-independence` check.
+- **Body running header reads "致谢".** Body and back-matter were collapsed into one section, and that section uses a `headerReference` whose target `headerN.xml` has the static text `致谢`. → Run `scripts/set_styleref_header.py final.docx --header headerN.xml --style-id 1 --in-place` to replace the static text with a `STYLEREF` field that resolves to the current chapter heading. Detected by the `body-header-non-back-matter` check.
+- **Header prints `错误!使用'开始'选项卡…` or `Error! No text of specified style…`.** A `STYLEREF "Heading 1"` field references the **display name** of the heading style; on localized templates the actual style name is "heading 1" (lowercase) or "标题 1", and the field cannot resolve. → Use `STYLEREF 1` (the numeric `styleId`); `set_styleref_header.py` defaults to this. Detected by the `pdf-field-errors` check when `--pdf` is supplied.
+- **Body page numbers don't restart at 1.** The body section has no `<w:pgNumType>` and silently inherits whichever format the previous (Roman) section used. → Set `<w:pgNumType w:fmt="decimal" w:start="1"/>` on the body section's `sectPr`. For thesis templates that demand a **separate** Roman TOC section and Arabic body section, insert a section break between TOC and the first body chapter and give each its own `pgNumType`.
+
 
 ## Script Guide
 
 - `scripts/inspect_docx_template.py`: dumps template styles (including those defined but unused in the body), paragraphs, tables, section settings, numbering hints, and hyperlink colors.
 - `scripts/adaptive_docx_pipeline.py`: reusable starter pipeline for template-based reconstruction. It is a code base to copy and patch, not a final institutional-template converter. Behavior is config-driven (`--config`). It remaps copied DOCX style IDs by visible style name by default, provides run-preserving replacement helpers for protected regions, and can scope formatting with `formatting_start_marker` / `formatting_end_marker`. Optional config keys include `clear_header_references`, `clear_footer_references`, and `heading_1_page_breaks`. Three-line tables and other Chinese-thesis-specific tweaks are opt-in.
 - `scripts/finalize_word_docx.py`: updates Word fields/TOC and optionally exports PDF through Word COM. Disables macros for safety, bootstraps missing Windows environment variables, and falls back through `EnsureDispatch`, `DispatchEx`, and `Dispatch`; use `--prefer-dispatch-ex` when an existing Word instance is unreliable.
-- `scripts/validate_docx_conversion.py`: automated QA for common failures, including template placeholders, body/back-matter ordering, heading-style preservation, inherited section headers, image/table counts, and protected front-matter format drift against the original template.
+- `scripts/validate_docx_conversion.py`: structural QA for common failures, including template placeholders, body/back-matter ordering, heading-style preservation, inherited section headers, image/table counts, and protected front-matter format drift against the original template.
+- `scripts/validate_docx_render.py`: render-level QA that complements the structural validator. Six checks (TOC field, numbering consistency, multilevel heading format, reference-counter independence, body-header literal, PDF field-error strings); each can be demoted with `--allow`. Run after Word COM finalization.
+- `scripts/inject_toc_field.py`: idempotently insert a `{ TOC \o "1-3" \h \z \u }` field after the 目录 / Contents / Table of Contents heading. Use when a rough conversion produced a TOC heading without a TOC field. Word's "update fields" cannot populate a TOC that isn't there.
+- `scripts/set_styleref_header.py`: rewrite a single `headerN.xml` so its first paragraph contains a `STYLEREF <styleId> \* MERGEFORMAT` field that resolves to the current chapter title. Use `--style-id 1` (numeric form) for portability — the display-name form fails on localized templates and prints `错误!使用'开始'选项卡…` in the rendered header.
 - `scripts/render_pdf_preview.py`: renders selected PDF pages into contact sheets for visual QA.
 - `presets/zhengzhou_thesis.json`: style/table/hyperlink config for the Zhengzhou-University case study. It does not delete sample pages, fill cover fields, replace abstracts, rebuild TOC, or repair section headers by itself.
 

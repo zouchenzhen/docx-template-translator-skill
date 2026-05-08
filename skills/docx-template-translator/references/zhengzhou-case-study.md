@@ -101,6 +101,42 @@ Treat any of the following as FAIL and iterate before reporting completion:
   all runs in protected front matter, or an `apply_final_styles()` pass that
   iterates over every paragraph/table without a generated-content scope marker.
 
+## Render-level QA (added after the v4 → v5 retrofit)
+
+The structural validator returned `STATUS: PASS` while the rendered document
+still had five visible defects: chapters had no `第N章` prefix, sections
+collapsed to `[1]`, references started at `[47]…[79]`, the body running
+header said `致谢`, and the 目录 page contained only the heading with no
+TOC body. Add these render-level checks (all available in
+`validate_docx_render.py`) to the iteration loop:
+
+- **TOC field present.** Walk `word/document.xml` for `<w:fldChar
+  fldCharType="begin">` followed by `<w:instrText> TOC `. If absent, run
+  `scripts/inject_toc_field.py final.docx --in-place` before finalization.
+- **`numId=1` is bound to the multilevel `abstractNum`** whose level 0 is
+  `第%1章`, level 1 is `%1.%2`, level 2 is `%1.%2.%3`. The previous
+  `repair_reference_numbering_links.py` step in v4 silently re-pointed
+  `numId=1` at a single-level `[%1]` abstract while building the reference
+  list — the heading level format strings then degraded to `[1]` for both
+  H2 and H3 paragraphs.
+- **Heading 1 actually carries `numPr`**, either at the style level or via
+  inline paragraph properties on every body chapter heading. Without it the
+  chapter prefix never renders.
+- **References use a dedicated `numId`** (e.g. `numId=4`) bound to the
+  `[%1]` `abstractNum`. Do not let the references share `numId=1` with
+  Heading 2/3 — the counter accumulates through every preceding heading,
+  which is why 33 references rendered as `[47]…[79]`.
+- **Body header is dynamic.** When the body+back-matter live in a single
+  section, replace the inherited static `致谢` text with a `STYLEREF 1
+  \* MERGEFORMAT` field via `scripts/set_styleref_header.py final.docx
+  --header headerN.xml --style-id 1 --in-place`. Use the **numeric
+  styleId**, not the localized display name `Heading 1`, otherwise Word
+  prints `错误!使用'开始'选项卡…` in the header.
+- **Body section restarts page numbering at 1.** Add `<w:pgNumType
+  w:fmt="decimal" w:start="1"/>` to the body `sectPr`; otherwise the body
+  silently inherits the abstract's Roman numerals and you see
+  "目录 page footer = 5 / 第1章 page footer = 8".
+
 ## Libraries Used
 
 - `pandoc`: rough LaTeX/Markdown to DOCX conversion.

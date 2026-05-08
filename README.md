@@ -125,6 +125,10 @@ skills/docx-template-translator/
 - `scripts/inspect_docx_template.py`：检查 Word 模板结构；
 - `scripts/adaptive_docx_pipeline.py`：可改造的 DOCX 重建脚本起点；
 - `scripts/finalize_word_docx.py`：通过 Word 更新目录/字段并导出 PDF；
+- `scripts/validate_docx_conversion.py`：结构层 QA（占位符 / 顺序 / 标题样式 / 章节页眉 / 受保护前置页格式漂移）；
+- `scripts/validate_docx_render.py`：渲染层 QA（TOC 字段是否存在 / numId↔abstractNum 一致性 / 多级标题格式串 / 参考文献计数器独立性 / 正文页眉静态文本残留 / PDF 字段错误串）；
+- `scripts/inject_toc_field.py`：在"目录 / Contents"标题后幂等注入 `{ TOC \o "1-3" \h \z \u }` 字段，修复"目录页只剩标题、TOC 字段缺失"的常见 bug；
+- `scripts/set_styleref_header.py`：把指定 `headerN.xml` 的静态文本（如 `致谢`）改写为 `STYLEREF <styleId>` 字段，让正文页眉随章节动态更新；
 - `scripts/render_pdf_preview.py`：将 PDF 渲染为预览拼图；
 - `references/pandoc-limitations.md`：说明和 pandoc 默认功能的区别；
 - `references/zhengzhou-case-study.md`：郑州大学毕业论文模板转换案例。

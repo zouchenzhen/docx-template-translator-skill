@@ -153,6 +153,10 @@ It includes:
 - `scripts/inspect_docx_template.py`: template inspection;
 - `scripts/adaptive_docx_pipeline.py`: starter reconstruction pipeline;
 - `scripts/finalize_word_docx.py`: Word field/TOC update and PDF export;
+- `scripts/validate_docx_conversion.py`: structural QA (placeholders, ordering, heading-style preservation, inherited section headers, protected-front-matter format drift);
+- `scripts/validate_docx_render.py`: render-level QA (TOC field present, numId↔abstractNum consistency, multilevel heading format, reference-counter independence, body-header static-text leakage, PDF field-error strings);
+- `scripts/inject_toc_field.py`: idempotently insert a `{ TOC \o "1-3" \h \z \u }` field after the 目录/Contents/Table of Contents heading; fixes the common "TOC heading exists but TOC field is missing" bug;
+- `scripts/set_styleref_header.py`: rewrite a single `headerN.xml` so the body running header dynamically follows the current chapter title via a `STYLEREF <styleId>` field instead of hard-coded back-matter text;
 - `scripts/render_pdf_preview.py`: PDF preview contact sheet rendering;
 - `references/pandoc-limitations.md`: comparison with pandoc defaults;
 - `references/zhengzhou-case-study.md`: university-thesis case study.
