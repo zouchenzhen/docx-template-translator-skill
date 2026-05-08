@@ -190,7 +190,13 @@ declared PASS on:
   (2) walk every body paragraph in `document.xml` for `(...)` cite tokens;
   (3) split multi-cite tokens by `;`, resolve each to a cite_key (handle
   collisions like two `lozano-cuadra 2024` entries by matching the bbl opt's
-  secondary author list against the docx token text); (4) replace the
+  secondary author list **plus the first author's initial from the bbl
+  author line** — pandoc emits `(W. Lu et al. 2025)` vs `(J. Lu et al. 2025)`
+  when two cite_keys share the same surname-year, and `(Lozano-Cuadra and
+  Soret 2024)` vs `(Lozano-Cuadra et al. 2024)` is distinguishable by
+  whether the secondary surname `Soret` actually appears in the docx token.
+  Use word-boundary matching `\bX\b` for single-letter initials so `'j'` does
+  not accidentally match the letter inside `et al.`); (4) replace the
   original parenthetical text with `[N1, N2]` wrapped as
   `<w:hyperlink w:anchor="ref_N">…<w:vertAlign w:val="superscript"/>` runs.
   Detected by the new `citation-coverage` check (`--source-latex-dir`).
