@@ -6,6 +6,14 @@
 
 English: [README.en.md](README.en.md)
 
+![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-3776AB.svg)
+![Skill](https://img.shields.io/badge/skill-Codex-orange.svg)
+![Output](https://img.shields.io/badge/output-DOCX-2B579A.svg)
+
+---
+
 ## 一分钟看效果
 
 仓库自带一个最小可跑示例 [`examples/minimal_markdown/`](examples/minimal_markdown/)，在仓库根目录跑：
