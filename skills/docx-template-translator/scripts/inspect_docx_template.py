@@ -5,6 +5,7 @@ Usage:
   python inspect_docx_template.py template.docx --out template_report.json
 """
 from __future__ import annotations
+import sys
 
 import argparse
 import json
@@ -188,4 +189,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    for _s in (sys.stdout, sys.stderr):
+        if hasattr(_s, "reconfigure"):
+            _s.reconfigure(encoding="utf-8", errors="replace")
+
     raise SystemExit(main())

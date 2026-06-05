@@ -7,6 +7,7 @@ Usage:
   python validate_docx_conversion.py final.docx --template template.docx --protected-until 中 文 摘 要
 """
 from __future__ import annotations
+import sys
 
 import argparse
 import json
@@ -342,4 +343,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    for _s in (sys.stdout, sys.stderr):
+        if hasattr(_s, "reconfigure"):
+            _s.reconfigure(encoding="utf-8", errors="replace")
+
     raise SystemExit(main())
